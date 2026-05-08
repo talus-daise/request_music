@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>リクエスト投稿</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>文化祭 リクエスト曲投稿</h1>
+    <form id="requestForm">
+      <label>学籍番号<select id="student_id" required></select></label>
+      <label>曲タイトル<input id="title" maxlength="120" required /></label>
+      <label>おすすめポイント<textarea id="recommendation" maxlength="400"></textarea></label>
+      <label>YouTubeリンク<input id="youtube_url" type="url" required /></label>
+      <button type="submit">投稿する</button>
+      <p id="message"></p>
+    </form>
+
+    <section><h2>統計</h2><div id="stats"></div><label><input type="checkbox" id="unplayedOnly"/> 未再生のみ</label></section>
+    <section><h2>投稿一覧</h2><div id="list"></div></section>
+    <section><h2>投稿者別統計</h2><div id="studentStats"></div></section>
+    <section><h2>再生履歴</h2><div id="history"></div></section>
+  </main>
+<script type="module" src="/assets/request.js"></script>
+</body></html>

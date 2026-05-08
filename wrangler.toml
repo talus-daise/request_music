@@ -1,0 +1,8 @@
+name = "request-music"
+compatibility_date = "2026-05-08"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "request_music"
+database_id = "replace-with-your-d1-id"
