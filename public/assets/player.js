@@ -8,6 +8,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const nowEl = document.getElementById('now');
   const countdownEl = document.getElementById('countdown');
+  const requesterEl = document.getElementById('requester');
   const ytEl = document.getElementById('yt');
   const startBtn = document.getElementById('start-btn');
   const overlay = document.getElementById('start-overlay');
@@ -30,7 +31,9 @@ window.addEventListener('DOMContentLoaded', () => {
       current = data;
 
       nowEl.textContent =
-        `再生中: ${data.title} / ${data.student_id}`;
+        `再生中: ${data.title}`;
+
+      requesterEl.textContent = data.student_id || '--';
 
       remain = data.max_duration_sec || 300;
 

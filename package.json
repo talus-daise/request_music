@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler pages dev public --d1 DB=request_music --compatibility-date=2026-05-08",
+    "dev": "wrangler pages dev public",
     "deploy": "wrangler pages deploy public",
     "db:migrate": "wrangler d1 execute request_music --file=./migrations/0001_init.sql",
     "db:migrate:local": "wrangler d1 execute request_music --local --file=./migrations/0001_init.sql",
