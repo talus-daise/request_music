@@ -5,4 +5,4 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "request_music"
-database_id = "replace-with-your-d1-id"
+database_id = "1650a8f2-72e4-4ebe-8de2-5a5b9ffd6438"
