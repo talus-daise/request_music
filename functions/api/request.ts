@@ -16,6 +16,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const youtubeId = extractYoutubeId(youtubeUrl);
     if (!youtubeId) return jsonResponse({ error: "YouTube URL形式が不正です。" }, 400);
 
+    // 1週間の投稿回数チェック
+    const weekCountRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS cnt FROM requests WHERE student_id = ?1 AND created_at > datetime('now', '-7 days')`
+    ).bind(studentId).first();
+    const weekCount = typeof weekCountRow?.cnt === "number" ? weekCountRow.cnt : Number(weekCountRow?.cnt ?? 0);
+    if (weekCount >= 5) {
+      return jsonResponse({ error: "1週間に5回までしか投稿できません。" }, 429);
+    }
+
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const ua = sanitizeText(request.headers.get("user-agent") ?? "", 200);
 
