@@ -1,4 +1,5 @@
 const studentSelect = document.getElementById('student_id');
+studentSelect.insertAdjacentHTML('beforeend', `<option value="#" disabled>番号を選択してください</option>`);
 for (let i = 1; i <= 40; i++) {
   const v = `3A${String(i).padStart(2, '0')}`;
   studentSelect.insertAdjacentHTML('beforeend', `<option value="${v}">${v}</option>`);
