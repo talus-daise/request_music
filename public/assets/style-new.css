@@ -1,0 +1,198 @@
+/*
+ * Dramatic, editorial, Japanese magazine-inspired style for music request UI
+ * - Large, bold typography for headers
+ * - Vertical rhythm, generous whitespace
+ * - Accent color: deep red, with black/white base
+ * - Custom font for headings (Google Fonts: "M PLUS 1p")
+ * - Subtle background texture (noise overlay)
+ * - Animated section reveals
+ * - Card-style for requests
+ * - Responsive, mobile-first
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@700&display=swap');
+
+
+:root {
+  --bg: #f5f8ff;
+  --fg: #16203a;
+  --accent: #0066c8;
+  --card-bg: #fff;
+  --card-shadow: 0 4px 24px rgba(0,102,200,0.10);
+  --border: #d0d8e0;
+  --noise: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=');
+}
+
+body {
+  background: var(--bg) var(--noise) repeat;
+  color: var(--fg);
+  font-family: 'M PLUS 1p', "游ゴシック体", YuGothic, "ヒラギノ角ゴ ProN W3", "Hiragino Kaku Gothic ProN", Arial, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 2.5rem 1.2rem 4rem 1.2rem;
+}
+
+h1 {
+  font-family: 'M PLUS 1p', sans-serif;
+  font-size: 2.7rem;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: 1.5rem;
+  text-shadow: 0 2px 0 #fff, 0 6px 24px rgba(0,102,200,0.13);
+}
+
+form {
+  background: var(--card-bg);
+  border-radius: 18px;
+  box-shadow: var(--card-shadow);
+  border: 1.5px solid var(--border);
+  display: grid;
+  gap: 1.2rem;
+  padding: 2rem 1.5rem 1.5rem 1.5rem;
+  margin-bottom: 2.5rem;
+  animation: fadeInUp 0.7s cubic-bezier(.23,1.02,.32,1) 0.1s both;
+}
+
+label {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+input, textarea, select {
+  font-size: 1.08rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: #fff8f5;
+  transition: border-color 0.2s;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button[type="submit"] {
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  padding: 0.9rem 0;
+  margin-top: 0.7rem;
+  box-shadow: 0 2px 12px rgba(0,102,200,0.13);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+button[type="submit"]:hover {
+  background: #004a99;
+  transform: translateY(-2px) scale(1.03);
+}
+
+#message {
+  min-height: 1.5em;
+  color: var(--accent);
+  font-weight: 700;
+  margin-top: 0.5em;
+  text-align: center;
+}
+
+section {
+  margin-bottom: 2.5rem;
+  animation: fadeInUp 0.7s cubic-bezier(.23,1.02,.32,1) both;
+}
+
+h2 {
+  font-size: 1.35rem;
+  color: var(--accent);
+  margin-bottom: 1.1rem;
+  font-family: 'M PLUS 1p', sans-serif;
+  letter-spacing: 0.03em;
+}
+
+#stats {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 0.7rem;
+}
+
+#list article {
+  background: var(--card-bg);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  border: 1.2px solid var(--border);
+  margin-bottom: 1.2rem;
+  padding: 1.1rem 1rem 0.7rem 1rem;
+  transition: box-shadow 0.2s, transform 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+#list article:hover {
+  box-shadow: 0 8px 32px rgba(200,0,47,0.13);
+  transform: translateY(-2px) scale(1.01);
+}
+#list b {
+  font-size: 1.18rem;
+  color: var(--accent);
+  font-family: 'M PLUS 1p', sans-serif;
+}
+#list small {
+  color: #a7a7a7;
+  font-size: 0.93em;
+  margin-left: 0.5em;
+}
+
+#studentStats > div {
+  display: inline-block;
+  background: #f0f6ff;
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 0.5em 1em;
+  margin: 0 0.5em 0.5em 0;
+  font-size: 1.02em;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0,102,200,0.09);
+}
+
+#history > div {
+  font-size: 1.01em;
+  color: #244;
+  margin-bottom: 0.4em;
+  padding-left: 0.5em;
+  border-left: 3px solid var(--accent);
+  background: #f5f8ff;
+  border-radius: 0 8px 8px 0;
+}
+
+#unplayedOnly {
+  accent-color: var(--accent);
+  margin-left: 0.5em;
+  transform: scale(1.2);
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 1.2rem 0.3rem 2rem 0.3rem;
+  }
+  form {
+    padding: 1.2rem 0.5rem 1rem 0.5rem;
+  }
+  h1 {
+    font-size: 2rem;
+  }
+}
