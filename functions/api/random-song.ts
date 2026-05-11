@@ -22,10 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   let candidates = candidatesResult.results ?? [];
 
   if (candidates.length === 0) {
-    await env.DB.prepare("UPDATE requests SET played = 0, played_today = 0").run();
-    const resetResult = await env.DB.prepare("SELECT * FROM requests ORDER BY created_at ASC").all<RequestRecord>();
-    candidates = resetResult.results ?? [];
-    if (candidates.length === 0) return jsonResponse({ error: "再生可能な曲がありません。" }, 404);
+    return jsonResponse({ error: "未再生の曲がありません。すべてのリクエストが消化されました。" }, 404);
   }
 
   const [totalByStudentResult, todayByStudentResult, recentResult] = await Promise.all([
@@ -55,6 +52,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
 
   const selected = weightedPick(candidates, (song) => calcWeight(song, totals, todayMap, recentMap));
   if (!selected) return jsonResponse({ error: "選曲に失敗しました。" }, 500);
+
+  // 選曲された瞬間に played フラグを立てることで、
+  // 再生中にブラウザをリロードしても同じ曲が選ばれないようにします。
+  await env.DB.prepare(
+    `UPDATE requests
+     SET played = 1,
+         played_today = 1,
+         last_played_at = datetime('now')
+     WHERE id = ?1`
+  ).bind(selected.id).run();
 
   return jsonResponse({
     id: selected.id,

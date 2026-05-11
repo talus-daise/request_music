@@ -107,7 +107,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     try {
 
-      await fetch('/api/song-played', {
+      const res = await fetch('/api/song-played', {
         method: 'POST',
         headers: {
           'content-type': 'application/json'
@@ -117,13 +117,18 @@ window.addEventListener('DOMContentLoaded', () => {
         })
       });
 
+      if (!res.ok) {
+        throw new Error('Failed to update played status');
+      }
+
     } catch (e) {
 
-      console.error(e);
+      console.error('再生済みステータスの更新に失敗しました:', e);
+      // 失敗しても次に進むが、サーバー側でエラーログを確認することを推奨
 
     }
 
-    pickAndPlay();
+    await pickAndPlay();
 
   }
 
