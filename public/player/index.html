@@ -9,31 +9,37 @@
 </head>
 
 <body class="player">
-    <!-- 初回再生開始用のオーバーレイ -->
-    <div id="start-overlay"
-        style="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:1000;display:flex;align-items:center;justify-content:center;flex-direction:column;color:white;">
-        <h2 style="margin-bottom:20px;">放送の準備ができました</h2>
-        <button id="start-btn"
-            style="padding:15px 30px;font-size:1.2rem;cursor:pointer;border-radius:8px;border:none;background:#3498db;color:white;">放送を開始する</button>
+    <div id="start-overlay" class="player-overlay">
+        <h2>放送の準備ができました</h2>
+        <button id="start-btn" class="primary-action">放送を開始する</button>
     </div>
 
-    <div id="player-container" style="position: fixed; inset: 0; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-        <!-- YouTubeプレーヤーを全画面に配置 -->
-        <div id="yt" style="width: 100%; height: 100%;">
-            <!-- YouTubeプレーヤーがここに埋め込まれる -->
+    <div id="player-container" class="player-shell">
+        <div id="yt" class="player-stage">
         </div>
 
-        <!-- 右上の情報オーバーレイカード -->
-        <div id="info-overlay" style="position: absolute; top: 20px; right: 20px; width: 280px; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px); color: white; padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 50; font-family: sans-serif;">
-            <div style="font-size: 0.7rem; color: #3498db; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.1em;">Now Playing</div>
-            <div id="now" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">準備中...</div>
+        <div id="info-overlay" class="info-overlay">
+            <div class="overlay-eyebrow">Now Playing</div>
+            <div id="now" class="overlay-title">準備中...</div>
             
-            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 10px;">
-                <div style="font-size: 0.8rem; opacity: 0.7;">リクエスト者:</div>
-                <div id="requester" style="font-size: 1rem; font-weight: 500;">--</div>
+            <div class="overlay-block">
+                <div class="overlay-label">リクエスト者:</div>
+                <div id="requester" class="overlay-value">--</div>
             </div>
 
-            <div id="countdown" style="margin-top: 15px; font-size: 1rem; font-weight: 800; text-align: right; font-family: monospace; color: #3498db; font-variant-numeric: tabular-nums;"></div>
+            <div id="countdown" class="overlay-countdown"></div>
+            <button id="next-btn" class="next-button" type="button">次へ進む</button>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-backdrop" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <h2 id="confirm-title">本当にいいですか？</h2>
+            <p>※この曲は再生済みとしてマークされます</p>
+            <div class="modal-actions">
+                <button id="cancel-next-btn" class="secondary-action" type="button">キャンセル</button>
+                <button id="confirm-next-btn" class="danger-action" type="button">次へ進む</button>
+            </div>
         </div>
     </div>
 

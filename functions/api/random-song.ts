@@ -16,7 +16,14 @@ function calcWeight(song: RequestRecord, totals: Map<string, number>, todayMap: 
 
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   const candidatesResult = await env.DB.prepare(
-    `SELECT * FROM requests WHERE played = 0 ORDER BY created_at ASC`
+    `SELECT *
+     FROM requests
+     WHERE played = 0
+       AND (
+         last_played_at IS NULL OR
+         datetime(last_played_at) < datetime('now', '-10 minutes')
+       )
+     ORDER BY created_at ASC`
   ).all<RequestRecord>();
 
   let candidates = candidatesResult.results ?? [];
@@ -53,13 +60,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   const selected = weightedPick(candidates, (song) => calcWeight(song, totals, todayMap, recentMap));
   if (!selected) return jsonResponse({ error: "選曲に失敗しました。" }, 500);
 
-  // 選曲された瞬間に played フラグを立てることで、
-  // 再生中にブラウザをリロードしても同じ曲が選ばれないようにします。
+  // 再生開始時点では未再生のままにし、直近10分だけ再抽選から外します。
+  // これにより手動スキップ確認と再生済み確定のタイミングを合わせます。
   await env.DB.prepare(
     `UPDATE requests
-     SET played = 1,
-         played_today = 1,
-         last_played_at = datetime('now')
+     SET last_played_at = datetime('now')
      WHERE id = ?1`
   ).bind(selected.id).run();
 

@@ -10,7 +10,15 @@
 
 <body>
   <main class="container">
-    <h1>3Aリクエスト曲投稿</h1>
+    <section class="hero-card">
+      <p class="eyebrow">Request Music</p>
+      <h1>3Aリクエスト曲投稿</h1>
+      <p class="hero-copy">放送で流したい曲を投稿するページです。曲一覧の確認や修正は管理ページから行えます。</p>
+      <div class="hero-actions">
+        <a class="button-link secondary" href="/manage/">曲一覧と編集へ</a>
+        <a class="button-link ghost" href="/player/">再生ページへ</a>
+      </div>
+    </section>
     <form id="requestForm">
       <label>学籍番号<select id="student_id" required></select></label>
       <label>曲タイトル<input id="title" maxlength="120" required /></label>
@@ -20,12 +28,12 @@
       <p id="message"></p>
     </form>
 
-    <section>
+    <section class="panel">
       <h2>統計</h2>
-      <div id="stats"></div><input type="checkbox" id="unplayedOnly" checked /> 未再生のみ
+      <div id="stats"></div><label class="toggle-row"><input type="checkbox" id="unplayedOnly" checked /> <span>未再生のみ</span></label>
       <section>
         <h2>投稿一覧</h2>
-        <div id="list"></div>
+        <div id="list" class="request-list"></div>
       </section>
       <section>
         <h2>投稿者別統計</h2>
@@ -35,6 +43,7 @@
         <h2>再生履歴</h2>
         <div id="history"></div>
       </section>
+    </section>
   </main>
   <script type="module" src="/assets/request.js"></script>
 </body>

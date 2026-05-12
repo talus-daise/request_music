@@ -8,7 +8,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const [listResult, statsResult, studentStats] = await Promise.all([
     env.DB.prepare(
-      `SELECT id, student_id, title, recommendation, created_at, played, played_today, play_count
+      `SELECT id, student_id, title, recommendation, youtube_id, created_at, played, played_today, play_count, last_played_at
        FROM requests ${where}
        ORDER BY datetime(created_at) DESC
        LIMIT 200`

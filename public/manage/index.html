@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>曲一覧と編集</title>
+  <link rel="stylesheet" href="/assets/style-new.css" />
+</head>
+
+<body>
+  <main class="container manage-page">
+    <section class="hero-card">
+      <p class="eyebrow">Manage Requests</p>
+      <h1>曲一覧と編集</h1>
+      <p class="hero-copy">投稿済みの曲を閲覧し、学籍番号・曲名・おすすめポイント・YouTubeリンクを修正できます。</p>
+      <div class="hero-actions">
+        <a class="button-link secondary" href="/request/">投稿ページへ戻る</a>
+        <label class="toggle-row">
+          <input type="checkbox" id="unplayedOnly" checked />
+          <span>未再生のみ表示</span>
+        </label>
+      </div>
+      <div id="stats" class="stats-band"></div>
+    </section>
+
+    <section class="manage-grid">
+      <div class="panel">
+        <div class="section-head">
+          <h2>投稿一覧</h2>
+          <p id="listCount" class="section-note"></p>
+        </div>
+        <div id="list" class="request-list manage-list"></div>
+      </div>
+
+      <aside class="panel editor-panel">
+        <div class="section-head">
+          <h2>選択中の曲を編集</h2>
+          <p class="section-note">左の一覧から曲を選んでください。</p>
+        </div>
+
+        <form id="editForm" class="editor-form">
+          <input type="hidden" id="edit_id" />
+          <label>学籍番号
+            <select id="edit_student_id" required></select>
+          </label>
+          <label>曲タイトル
+            <input id="edit_title" maxlength="120" required />
+          </label>
+          <label>おすすめポイント
+            <textarea id="edit_recommendation" maxlength="400"></textarea>
+          </label>
+          <label>YouTubeリンク
+            <input id="edit_youtube_url" type="url" required />
+          </label>
+          <div class="editor-meta" id="editMeta">曲を選択すると詳細を表示します。</div>
+          <button type="submit" id="saveBtn" disabled>変更を保存</button>
+          <p id="message"></p>
+        </form>
+      </aside>
+    </section>
+  </main>
+
+  <script type="module" src="/assets/manage.js"></script>
+</body>
+
+</html>

@@ -3,6 +3,7 @@ let countdownTimer;
 let current = null;
 let player = null;
 let remain = 300;
+let isAdvancing = false;
 
 window.addEventListener('DOMContentLoaded', () => {
 
@@ -12,9 +13,14 @@ window.addEventListener('DOMContentLoaded', () => {
   const ytEl = document.getElementById('yt');
   const startBtn = document.getElementById('start-btn');
   const overlay = document.getElementById('start-overlay');
+  const nextBtn = document.getElementById('next-btn');
+  const confirmModal = document.getElementById('confirm-modal');
+  const cancelNextBtn = document.getElementById('cancel-next-btn');
+  const confirmNextBtn = document.getElementById('confirm-next-btn');
 
   async function pickAndPlay() {
 
+    isAdvancing = false;
     clearTimeout(timer);
     clearInterval(countdownTimer);
 
@@ -92,7 +98,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   async function finishTrack() {
 
-    if (!current) return;
+    if (!current || isAdvancing) return;
+
+    isAdvancing = true;
 
     const played = current;
     current = null;
@@ -132,10 +140,35 @@ window.addEventListener('DOMContentLoaded', () => {
 
   }
 
+  function openConfirmModal() {
+
+    if (!current) return;
+    confirmModal.hidden = false;
+
+  }
+
+  function closeConfirmModal() {
+
+    confirmModal.hidden = true;
+
+  }
+
   // ボタンが押されたらオーバーレイを消して再生開始
   startBtn.addEventListener('click', () => {
     overlay.style.display = 'none';
     pickAndPlay();
   }, { once: true });
+
+  nextBtn.addEventListener('click', openConfirmModal);
+  cancelNextBtn.addEventListener('click', closeConfirmModal);
+  confirmNextBtn.addEventListener('click', async () => {
+    closeConfirmModal();
+    await finishTrack();
+  });
+  confirmModal.addEventListener('click', (event) => {
+    if (event.target === confirmModal) {
+      closeConfirmModal();
+    }
+  });
 
 });

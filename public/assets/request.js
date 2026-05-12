@@ -11,13 +11,20 @@ const unplayedOnly = document.getElementById('unplayedOnly');
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  msg.textContent = '送信中...';
   const payload = {
     student_id: document.getElementById('student_id').value,
     title: document.getElementById('title').value,
     recommendation: document.getElementById('recommendation').value,
     youtube_url: document.getElementById('youtube_url').value
   };
+
+  const accepted = window.confirm(`学籍番号は ${payload.student_id} で合っていますか？`);
+  if (!accepted) {
+    msg.textContent = '投稿を中止しました。';
+    return;
+  }
+
+  msg.textContent = '送信中...';
   const res = await fetch('/api/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await res.json();
   msg.textContent = data.message || data.error || '完了';
