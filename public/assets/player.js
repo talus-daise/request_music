@@ -144,12 +144,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (!current) return;
     confirmModal.hidden = false;
+    confirmModal.style.display = "grid";
 
   }
 
   function closeConfirmModal() {
 
     confirmModal.hidden = true;
+    confirmModal.style.display = "none";
 
   }
 
