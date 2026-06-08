@@ -11,6 +11,16 @@ const saveBtn = document.getElementById('saveBtn');
 
 let requests = [];
 let selectedId = null;
+const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
 
 studentSelect.insertAdjacentHTML('beforeend', '<option value="" selected disabled>番号を選択してください</option>');
 for (const studentId of students) {
@@ -102,7 +112,7 @@ function renderList() {
         </div>
         ${recommendation}
         <dl class="request-meta">
-          <div><dt>投稿</dt><dd>${escapeHtml(request.created_at)}</dd></div>
+          <div><dt>投稿</dt><dd>${escapeHtml(formatJstDateTime(request.created_at))}</dd></div>
           <div><dt>YouTube</dt><dd>${escapeHtml(`https://youtu.be/${request.youtube_id}`)}</dd></div>
           <div><dt>再生回数</dt><dd>${escapeHtml(String(request.play_count ?? 0))}</dd></div>
         </dl>
@@ -133,7 +143,7 @@ function selectRequest(requestId) {
   document.getElementById('edit_title').value = request.title;
   document.getElementById('edit_recommendation').value = request.recommendation || '';
   document.getElementById('edit_youtube_url').value = `https://youtu.be/${request.youtube_id}`;
-  editMetaEl.textContent = `ID ${request.id} / ${Number(request.played) === 1 ? '再生済み' : '未再生'} / 最終更新候補時刻: ${request.last_played_at || 'なし'}`;
+  editMetaEl.textContent = `ID ${request.id} / ${Number(request.played) === 1 ? '再生済み' : '未再生'} / 最終再生: ${formatJstDateTime(request.last_played_at)}`;
   saveBtn.disabled = false;
 }
 
@@ -143,6 +153,21 @@ function resetEditor(metaText = '曲を選択すると詳細を表示します�
   editMetaEl.textContent = metaText;
   saveBtn.disabled = true;
   studentSelect.selectedIndex = 0;
+}
+
+function formatJstDateTime(value) {
+  if (!value) {
+    return 'なし';
+  }
+
+  const normalizedValue = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${String(value).replace(' ', 'T')}Z`;
+  const date = new Date(normalizedValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return `${jstDateTimeFormatter.format(date)} JST`;
 }
 
 function escapeHtml(value) {
