@@ -28,19 +28,35 @@
       <p id="message"></p>
     </form>
 
-    <section class="panel">
-      <h2>統計</h2>
-      <div id="stats"></div><label class="toggle-row"><input type="checkbox" id="unplayedOnly" checked /> <span>未再生のみ</span></label>
-      <section>
-        <h2>投稿一覧</h2>
+    <section class="panel dashboard-panel">
+      <div class="section-head padded-heading">
+        <h2>統計</h2>
+        <label class="toggle-row"><input type="checkbox" id="unplayedOnly" checked /> <span>未再生のみ</span></label>
+      </div>
+      <div id="stats" class="stats-band compact"></div>
+
+      <section class="panel-section">
+        <div class="section-head padded-heading">
+          <h2>投稿一覧</h2>
+          <p class="section-note">投稿日時はJSTで表示しています。</p>
+        </div>
         <div id="list" class="request-list"></div>
       </section>
-      <section>
-        <h2>投稿者別統計</h2>
-        <div id="studentStats"></div>
+
+      <section class="panel-section student-stats-section">
+        <div class="section-head padded-heading">
+          <h2>投稿者別統計</h2>
+          <p class="section-note">投稿数・再生数・未再生数を投稿者ごとに確認できます。</p>
+        </div>
+        <div id="studentStatsSummary" class="student-stats-summary" aria-label="投稿者別統計の概要"></div>
+        <div id="studentStats" class="student-stats-grid"></div>
       </section>
-      <section>
-        <h2>再生履歴</h2>
+
+      <section class="panel-section">
+        <div class="section-head padded-heading">
+          <h2>再生履歴</h2>
+          <p class="section-note">再生時刻はJSTで表示しています。</p>
+        </div>
         <div id="history"></div>
       </section>
     </section>

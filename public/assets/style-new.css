@@ -262,13 +262,13 @@ h2 {
   color: var(--muted);
 }
 
-#studentStats {
+#studentStats:not(.student-stats-grid) {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-#studentStats > div {
+#studentStats:not(.student-stats-grid) > div {
   padding: 10px 14px;
   border-radius: 999px;
   background: var(--accent-soft);
@@ -429,5 +429,182 @@ h2 {
 
   .button-link {
     width: 100%;
+  }
+}
+
+.dashboard-panel {
+  display: grid;
+  gap: 24px;
+}
+
+.panel-section {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.padded-heading {
+  padding: 4px 2px 10px;
+  margin-bottom: 12px;
+}
+
+.stats-band.compact {
+  margin-top: 0;
+}
+
+.student-stats-section {
+  display: grid;
+  gap: 14px;
+}
+
+.student-stats-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.student-stats-summary > div {
+  padding: 14px 16px;
+  border: 1px solid rgba(0, 94, 203, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(0, 94, 203, 0.08), rgba(255, 255, 255, 0.84));
+}
+
+.student-stats-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.student-stats-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--accent-strong);
+  font-size: clamp(1.15rem, 3vw, 1.55rem);
+  line-height: 1.15;
+}
+
+.student-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.student-stat-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(24, 36, 59, 0.09);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 12px 24px rgba(16, 35, 67, 0.07);
+}
+
+.student-stat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.student-stat-head > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.student-stat-head strong {
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.rank-pill,
+.played-rate {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.rank-pill {
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+}
+
+.played-rate {
+  color: var(--success);
+  background: rgba(15, 139, 95, 0.1);
+}
+
+.student-stat-numbers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.student-stat-numbers span {
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(0, 94, 203, 0.06);
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.student-stat-numbers b {
+  display: block;
+  color: var(--accent-strong);
+  font-size: 1.15rem;
+}
+
+.stat-meter {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 94, 203, 0.1);
+}
+
+.stat-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #4aa3ff);
+}
+
+.empty-state {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed rgba(0, 94, 203, 0.24);
+  border-radius: 18px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+#history > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+}
+
+#history time {
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .student-stats-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .student-stats-summary,
+  .student-stat-numbers {
+    grid-template-columns: 1fr;
   }
 }
