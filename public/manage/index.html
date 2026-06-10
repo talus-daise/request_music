@@ -13,7 +13,7 @@
     <section class="hero-card">
       <p class="eyebrow">Manage Requests</p>
       <h1>曲一覧と編集</h1>
-      <p class="hero-copy">投稿済みの曲を閲覧し、学籍番号・曲名・おすすめポイント・YouTubeリンクを修正できます。</p>
+      <p class="hero-copy">投稿済みの曲を閲覧し、学籍番号・曲名・おすすめポイント・YouTubeリンクの修正や不要な曲の削除ができます。</p>
       <div class="hero-actions">
         <a class="button-link secondary" href="/request/">投稿ページへ戻る</a>
         <label class="toggle-row">
@@ -54,7 +54,10 @@
             <input id="edit_youtube_url" type="url" required />
           </label>
           <div class="editor-meta" id="editMeta">曲を選択すると詳細を表示します。</div>
-          <button type="submit" id="saveBtn" disabled>変更を保存</button>
+          <div class="editor-actions">
+            <button type="submit" id="saveBtn" disabled>変更を保存</button>
+            <button type="button" id="deleteBtn" class="danger-button" disabled>この曲を削除</button>
+          </div>
           <p id="message"></p>
         </form>
       </aside>

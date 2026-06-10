@@ -67,3 +67,30 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     return jsonResponse({ error: "更新処理中にエラーが発生しました。" }, 500);
   }
 };
+
+
+export const onRequestDelete: PagesFunction<Env> = async ({ env, params }) => {
+  try {
+    const requestId = Number(params.id);
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return jsonResponse({ error: "IDが不正です。" }, 400);
+    }
+
+    const existing = await env.DB.prepare(
+      `SELECT id FROM requests WHERE id = ?1 LIMIT 1`
+    ).bind(requestId).first();
+
+    if (!existing) {
+      return jsonResponse({ error: "対象の曲が見つかりません。" }, 404);
+    }
+
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM play_history WHERE request_id = ?1").bind(requestId),
+      env.DB.prepare("DELETE FROM requests WHERE id = ?1").bind(requestId)
+    ]);
+
+    return jsonResponse({ ok: true, message: "削除しました。" });
+  } catch {
+    return jsonResponse({ error: "削除処理中にエラーが発生しました。" }, 500);
+  }
+};

@@ -8,6 +8,7 @@ const statsEl = document.getElementById('stats');
 const listCountEl = document.getElementById('listCount');
 const editMetaEl = document.getElementById('editMeta');
 const saveBtn = document.getElementById('saveBtn');
+const deleteBtn = document.getElementById('deleteBtn');
 
 let requests = [];
 let selectedId = null;
@@ -70,6 +71,46 @@ editForm.addEventListener('submit', async (event) => {
   } catch (error) {
     console.error(error);
     messageEl.textContent = '保存中に通信エラーが発生しました。';
+  }
+});
+
+deleteBtn.addEventListener('click', async () => {
+  if (!selectedId) {
+    messageEl.textContent = '先に曲を選択してください。';
+    return;
+  }
+
+  const selectedRequest = requests.find((request) => request.id === selectedId);
+  const title = selectedRequest?.title || '選択中の曲';
+  if (!window.confirm(`「${title}」を削除します。この操作は取り消せません。`)) {
+    return;
+  }
+
+  messageEl.textContent = '削除中...';
+  deleteBtn.disabled = true;
+  saveBtn.disabled = true;
+
+  try {
+    const response = await fetch(`/api/requests/${selectedId}`, {
+      method: 'DELETE'
+    });
+    const data = await response.json();
+    messageEl.textContent = data.message || data.error || '削除しました。';
+
+    if (!response.ok) {
+      deleteBtn.disabled = false;
+      saveBtn.disabled = false;
+      return;
+    }
+
+    selectedId = null;
+    resetEditor('曲を削除しました。');
+    await loadRequests();
+  } catch (error) {
+    console.error(error);
+    messageEl.textContent = '削除中に通信エラーが発生しました。';
+    deleteBtn.disabled = false;
+    saveBtn.disabled = false;
   }
 });
 
@@ -145,6 +186,7 @@ function selectRequest(requestId) {
   document.getElementById('edit_youtube_url').value = `https://youtu.be/${request.youtube_id}`;
   editMetaEl.textContent = `ID ${request.id} / ${Number(request.played) === 1 ? '再生済み' : '未再生'} / 最終再生: ${formatJstDateTime(request.last_played_at)}`;
   saveBtn.disabled = false;
+  deleteBtn.disabled = false;
 }
 
 function resetEditor(metaText = '曲を選択すると詳細を表示します。') {
@@ -152,6 +194,7 @@ function resetEditor(metaText = '曲を選択すると詳細を表示します�
   document.getElementById('edit_id').value = '';
   editMetaEl.textContent = metaText;
   saveBtn.disabled = true;
+  deleteBtn.disabled = true;
   studentSelect.selectedIndex = 0;
 }
 
