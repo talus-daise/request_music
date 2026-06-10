@@ -167,17 +167,29 @@ textarea {
   resize: vertical;
 }
 
-button[type="submit"] {
+button[type="submit"],
+.danger-button {
   min-height: 52px;
   padding: 0 20px;
   font-size: 1rem;
   font-weight: 800;
 }
 
+.danger-button {
+  color: #fff;
+  background: linear-gradient(135deg, #c83232, #ef6b5f);
+  box-shadow: 0 14px 30px rgba(200, 50, 50, 0.2);
+}
+
 button[disabled] {
   cursor: not-allowed;
   opacity: 0.55;
   transform: none;
+}
+
+.editor-actions {
+  display: grid;
+  gap: 10px;
 }
 
 #message {
