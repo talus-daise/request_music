@@ -63,7 +63,6 @@ function renderStudentStats(studentStats) {
   const summaryEl = document.getElementById('studentStatsSummary');
   const totalPosted = studentStats.reduce((sum, student) => sum + Number(student.posted_count || 0), 0);
   const totalPlayed = studentStats.reduce((sum, student) => sum + Number(student.played_count || 0), 0);
-  const maxPosted = Math.max(...studentStats.map((student) => Number(student.posted_count || 0)), 1);
   const topStudent = studentStats[0];
 
   summaryEl.innerHTML = `
@@ -82,8 +81,8 @@ function renderStudentStats(studentStats) {
     const postedCount = Number(student.posted_count || 0);
     const playedCount = Number(student.played_count || 0);
     const waitingCount = Math.max(postedCount - playedCount, 0);
-    const postedPercent = Math.round((postedCount / maxPosted) * 100);
     const playedPercent = postedCount > 0 ? Math.round((playedCount / postedCount) * 100) : 0;
+    const playedRateColor = getPlayedRateColor(playedPercent);
     const rankLabel = index === 0 ? 'Top' : `#${index + 1}`;
 
     return `
@@ -100,12 +99,28 @@ function renderStudentStats(studentStats) {
           <span><b>${playedCount}</b>再生</span>
           <span><b>${waitingCount}</b>未再生</span>
         </div>
-        <div class="stat-meter" aria-hidden="true">
-          <span style="width: ${postedPercent}%"></span>
+        <div class="stat-meter" aria-label="${escapeHtml(student.student_id)}の再生率 ${playedPercent}%" role="img">
+          <span style="width: ${playedPercent}%; --played-rate-color: ${playedRateColor}"></span>
         </div>
       </article>
     `;
   }).join('');
+}
+
+function getPlayedRateColor(playedPercent) {
+  if (playedPercent >= 80) {
+    return '#0f8b5f';
+  }
+
+  if (playedPercent >= 50) {
+    return '#1f7ae0';
+  }
+
+  if (playedPercent >= 25) {
+    return '#f59f00';
+  }
+
+  return '#e03131';
 }
 
 function formatJstDateTime(value) {
