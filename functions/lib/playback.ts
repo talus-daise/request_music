@@ -2,6 +2,8 @@ import type { Env, PlaybackStateRecord, RequestRecord } from "./types";
 import { weightedPick } from "./utils";
 
 const MAX_PLAY_SECONDS = 300;
+const ACTIVE_CLIENT_TTL_SECONDS = 15;
+const ACTIVE_CLIENT_STALE_MODIFIER = `-${ACTIVE_CLIENT_TTL_SECONDS} seconds`;
 
 function calcWeight(song: RequestRecord, totals: Map<string, number>, todayMap: Map<string, number>, recentMap: Map<string, number>): number {
   const posted = totals.get(song.student_id) ?? 1;
@@ -115,9 +117,64 @@ export async function ensurePlaybackState(env: Env): Promise<void> {
   ).run();
 
   await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS playback_clients (
+       client_id TEXT PRIMARY KEY,
+       last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+     )`
+  ).run();
+
+  await env.DB.prepare(
     `INSERT OR IGNORE INTO playback_state (id, status, duration_sec)
      VALUES (1, 'stopped', ?1)`
   ).bind(MAX_PLAY_SECONDS).run();
+}
+
+export async function pruneInactivePlaybackClients(env: Env): Promise<void> {
+  await ensurePlaybackState(env);
+  await env.DB.prepare(
+    `DELETE FROM playback_clients
+     WHERE datetime(last_seen_at) < datetime('now', ?1)`
+  ).bind(ACTIVE_CLIENT_STALE_MODIFIER).run();
+}
+
+export async function recordPlaybackClientHeartbeat(env: Env, clientId: string): Promise<void> {
+  await ensurePlaybackState(env);
+  await env.DB.prepare(
+    `INSERT INTO playback_clients (client_id, last_seen_at)
+     VALUES (?1, datetime('now'))
+     ON CONFLICT(client_id) DO UPDATE SET last_seen_at = datetime('now')`
+  ).bind(clientId).run();
+}
+
+export async function removePlaybackClient(env: Env, clientId: string): Promise<void> {
+  await ensurePlaybackState(env);
+  await env.DB.prepare(
+    `DELETE FROM playback_clients
+     WHERE client_id = ?1`
+  ).bind(clientId).run();
+}
+
+export async function getActivePlaybackClientCount(env: Env): Promise<number> {
+  await pruneInactivePlaybackClients(env);
+  const result = await env.DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM playback_clients`
+  ).first<{ count: number }>();
+
+  return Number(result?.count ?? 0);
+}
+
+export async function stopPlaybackIfNoActiveClients(env: Env): Promise<void> {
+  const activeClientCount = await getActivePlaybackClientCount(env);
+  if (activeClientCount > 0) return;
+
+  await env.DB.prepare(
+    `UPDATE playback_state
+     SET status = 'stopped',
+         updated_at = datetime('now')
+     WHERE id = 1
+       AND status = 'playing'`
+  ).run();
 }
 
 export async function getPlaybackState(env: Env): Promise<PlaybackStateRecord> {
@@ -159,4 +216,4 @@ export function serializePlaybackState(state: PlaybackStateRecord, serverNow = n
   };
 }
 
-export { MAX_PLAY_SECONDS };
+export { ACTIVE_CLIENT_TTL_SECONDS, MAX_PLAY_SECONDS };

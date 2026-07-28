@@ -14,3 +14,8 @@ CREATE TABLE IF NOT EXISTS playback_state (
 
 INSERT OR IGNORE INTO playback_state (id, status, duration_sec)
 VALUES (1, 'stopped', 300);
+
+CREATE TABLE IF NOT EXISTS playback_clients (
+  client_id TEXT PRIMARY KEY,
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

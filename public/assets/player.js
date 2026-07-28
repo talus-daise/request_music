@@ -5,10 +5,13 @@ let player = null;
 let isAdvancing = false;
 let hasUserStarted = false;
 let lastVideoId = null;
+let heartbeatTimer;
 
 const MAX_PLAY_SECONDS = 300;
 const SYNC_INTERVAL_MS = 2000;
 const SEEK_TOLERANCE_SECONDS = 2;
+const HEARTBEAT_INTERVAL_MS = 5000;
+const CLIENT_ID_STORAGE_KEY = "requestMusicPlaybackClientId";
 
 window.addEventListener('DOMContentLoaded', () => {
 
@@ -58,6 +61,72 @@ window.addEventListener('DOMContentLoaded', () => {
     return {
       error: text ? `APIがJSONではない応答を返しました (${res.status})` : `APIエラー (${res.status})`
     };
+  }
+
+  function getClientId() {
+    const existing = sessionStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (existing) return existing;
+
+    const generated = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    sessionStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+    return generated;
+  }
+
+  const clientId = getClientId();
+
+  async function sendPlaybackClientEvent(path, keepalive = false) {
+    const payload = JSON.stringify({ client_id: clientId });
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: payload,
+      keepalive
+    });
+
+    if (!res.ok) {
+      const data = await readJsonResponse(res);
+      throw new Error(data.error || `Failed to send playback client event (${res.status})`);
+    }
+  }
+
+  async function sendHeartbeat() {
+    await sendPlaybackClientEvent('/api/playback-heartbeat');
+  }
+
+  function startHeartbeat() {
+    clearInterval(heartbeatTimer);
+    sendHeartbeat().catch((e) => console.error('再生デバイスのheartbeatに失敗しました:', e));
+    heartbeatTimer = setInterval(() => {
+      sendHeartbeat().catch((e) => console.error('再生デバイスのheartbeatに失敗しました:', e));
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  function stopHeartbeat() {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+
+  function notifyPlaybackLeave() {
+    if (!hasUserStarted) return;
+
+    stopHeartbeat();
+    const payload = JSON.stringify({ client_id: clientId });
+
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/playback-leave', new Blob([payload], { type: 'application/json' }));
+      return;
+    }
+
+    fetch('/api/playback-leave', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: payload,
+      keepalive: true
+    }).catch(() => {});
   }
 
   function syncPlayerPosition(state) {
@@ -201,10 +270,12 @@ window.addEventListener('DOMContentLoaded', () => {
   async function beginPlayback() {
     hasUserStarted = true;
     overlay.style.display = 'none';
+    startHeartbeat();
     startLocalCountdown();
     startSyncLoop();
 
     try {
+      await sendHeartbeat();
       const state = await fetchPlaybackState();
       if (state.status !== 'playing') {
         await advancePlayback();
@@ -250,6 +321,9 @@ window.addEventListener('DOMContentLoaded', () => {
     nowEl.textContent = '同期待機中';
   });
   startSyncLoop();
+
+  window.addEventListener('pagehide', notifyPlaybackLeave);
+  window.addEventListener('beforeunload', notifyPlaybackLeave);
 
   startBtn.addEventListener('click', beginPlayback, { once: true });
   nextBtn.addEventListener('click', openConfirmModal);
