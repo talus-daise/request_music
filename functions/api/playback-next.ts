@@ -47,71 +47,76 @@ async function markPlayed(env: Env, requestId: number | null): Promise<void> {
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const state = await getPlaybackState(env);
-  const body = await request.json<Record<string, unknown>>().catch(() => ({}));
-  const currentRequestId = Number(body.current_request_id);
+  try {
+    const state = await getPlaybackState(env);
+    const body = await request.json<Record<string, unknown>>().catch(() => ({}));
+    const currentRequestId = Number(body.current_request_id);
 
-  if (
-    Number.isInteger(currentRequestId) &&
-    state.request_id !== null &&
-    currentRequestId !== state.request_id
-  ) {
-    return jsonResponse(serializePlaybackState(state));
-  }
-
-  if (state.status === "playing" && state.request_id !== null) {
-    const lockResult = await env.DB.prepare(
-      `UPDATE playback_state
-       SET status = 'stopped',
-           updated_at = datetime('now')
-       WHERE id = 1
-         AND status = 'playing'
-         AND request_id = ?1`
-    ).bind(state.request_id).run();
-
-    if ((lockResult.meta.changes ?? 0) === 0) {
-      const latest = await getPlaybackState(env);
-      return jsonResponse(serializePlaybackState(latest));
+    if (
+      Number.isInteger(currentRequestId) &&
+      state.request_id !== null &&
+      currentRequestId !== state.request_id
+    ) {
+      return jsonResponse(serializePlaybackState(state));
     }
-  }
 
-  await markPlayed(env, state.request_id);
+    if (state.status === "playing" && state.request_id !== null) {
+      const lockResult = await env.DB.prepare(
+        `UPDATE playback_state
+         SET status = 'stopped',
+             updated_at = datetime('now')
+         WHERE id = 1
+           AND status = 'playing'
+           AND request_id = ?1`
+      ).bind(state.request_id).run();
 
-  const { song, error } = await selectRandomSong(env);
+      if ((lockResult.meta.changes ?? 0) === 0) {
+        const latest = await getPlaybackState(env);
+        return jsonResponse(serializePlaybackState(latest));
+      }
+    }
 
-  if (!song) {
+    await markPlayed(env, state.request_id);
+
+    const { song, error } = await selectRandomSong(env);
+
+    if (!song) {
+      await env.DB.prepare(
+        `UPDATE playback_state
+         SET request_id = NULL,
+             student_id = NULL,
+             title = NULL,
+             recommendation = NULL,
+             youtube_id = NULL,
+             started_at = NULL,
+             duration_sec = ?1,
+             status = 'stopped',
+             updated_at = datetime('now')
+         WHERE id = 1`
+      ).bind(MAX_PLAY_SECONDS).run();
+
+      const stopped = await getPlaybackState(env);
+      return jsonResponse({ ...serializePlaybackState(stopped), error }, 404);
+    }
+
     await env.DB.prepare(
       `UPDATE playback_state
-       SET request_id = NULL,
-           student_id = NULL,
-           title = NULL,
-           recommendation = NULL,
-           youtube_id = NULL,
-           started_at = NULL,
-           duration_sec = ?1,
-           status = 'stopped',
+       SET request_id = ?1,
+           student_id = ?2,
+           title = ?3,
+           recommendation = ?4,
+           youtube_id = ?5,
+           started_at = datetime('now'),
+           duration_sec = ?6,
+           status = 'playing',
            updated_at = datetime('now')
        WHERE id = 1`
-    ).bind(MAX_PLAY_SECONDS).run();
+    ).bind(song.id, song.student_id, song.title, song.recommendation, song.youtube_id, MAX_PLAY_SECONDS).run();
 
-    const stopped = await getPlaybackState(env);
-    return jsonResponse({ ...serializePlaybackState(stopped), error }, 404);
+    const nextState = await getPlaybackState(env);
+    return jsonResponse(serializePlaybackState(nextState));
+  } catch (error) {
+    console.error("Failed to advance playback", error);
+    return jsonResponse({ error: "再生状態の更新に失敗しました。" }, 500);
   }
-
-  await env.DB.prepare(
-    `UPDATE playback_state
-     SET request_id = ?1,
-         student_id = ?2,
-         title = ?3,
-         recommendation = ?4,
-         youtube_id = ?5,
-         started_at = datetime('now'),
-         duration_sec = ?6,
-         status = 'playing',
-         updated_at = datetime('now')
-     WHERE id = 1`
-  ).bind(song.id, song.student_id, song.title, song.recommendation, song.youtube_id, MAX_PLAY_SECONDS).run();
-
-  const nextState = await getPlaybackState(env);
-  return jsonResponse(serializePlaybackState(nextState));
 };

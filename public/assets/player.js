@@ -47,6 +47,19 @@ window.addEventListener('DOMContentLoaded', () => {
     );
   }
 
+  async function readJsonResponse(res) {
+    const contentType = res.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+      return res.json();
+    }
+
+    const text = await res.text();
+    return {
+      error: text ? `APIがJSONではない応答を返しました (${res.status})` : `APIエラー (${res.status})`
+    };
+  }
+
   function syncPlayerPosition(state) {
     if (!player || !state.youtube_id || !hasUserStarted) return;
 
@@ -124,7 +137,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   async function fetchPlaybackState() {
     const res = await fetch('/api/playback-state');
-    const state = await res.json();
+    const state = await readJsonResponse(res);
 
     if (!res.ok) {
       throw new Error(state.error || 'Failed to fetch playback state');
@@ -144,7 +157,7 @@ window.addEventListener('DOMContentLoaded', () => {
         current_request_id: current?.request_id ?? null
       })
     });
-    const state = await res.json();
+    const state = await readJsonResponse(res);
 
     applyState(state);
 
