@@ -1,11 +1,14 @@
 let countdownTimer;
+let syncTimer;
 let current = null;
 let player = null;
-let remain = 300;
 let isAdvancing = false;
-let isCountdownDurationSynced = false;
+let hasUserStarted = false;
+let lastVideoId = null;
 
 const MAX_PLAY_SECONDS = 300;
+const SYNC_INTERVAL_MS = 2000;
+const SEEK_TOLERANCE_SECONDS = 2;
 
 window.addEventListener('DOMContentLoaded', () => {
 
@@ -19,32 +22,21 @@ window.addEventListener('DOMContentLoaded', () => {
   const cancelNextBtn = document.getElementById('cancel-next-btn');
   const confirmNextBtn = document.getElementById('confirm-next-btn');
 
-  function updateCountdownText() {
-    countdownEl.textContent = `次曲まで: ${remain}秒`;
+  function updateCountdownText(remaining) {
+    countdownEl.textContent = `次曲まで: ${Math.max(0, remaining)}秒`;
   }
 
-  function getVideoDurationLimit() {
-    if (!player || typeof player.getDuration !== 'function') {
-      return null;
+  function updateInfo(state) {
+    if (state.status !== 'playing' || !state.youtube_id) {
+      nowEl.textContent = state.error || '曲なし';
+      requesterEl.textContent = '--';
+      updateCountdownText(0);
+      return;
     }
 
-    const duration = player.getDuration();
-    if (!Number.isFinite(duration) || duration <= 0) {
-      return null;
-    }
-
-    return Math.min(Math.ceil(duration), MAX_PLAY_SECONDS);
-  }
-
-  function syncCountdownWithVideoDuration() {
-    if (!current || isCountdownDurationSynced) return;
-
-    const durationLimit = getVideoDurationLimit();
-    if (durationLimit === null) return;
-
-    isCountdownDurationSynced = true;
-    remain = durationLimit;
-    updateCountdownText();
+    nowEl.textContent = `再生中: ${state.title}`;
+    requesterEl.textContent = state.student_id || '--';
+    updateCountdownText(state.remaining_sec ?? state.duration_sec ?? MAX_PLAY_SECONDS);
   }
 
   function isVideoPlaying() {
@@ -55,132 +47,180 @@ window.addEventListener('DOMContentLoaded', () => {
     );
   }
 
-  async function pickAndPlay() {
+  function syncPlayerPosition(state) {
+    if (!player || !state.youtube_id || !hasUserStarted) return;
 
-    isAdvancing = false;
+    const targetPosition = Math.max(0, state.position_sec ?? 0);
+
+    if (lastVideoId !== state.youtube_id) {
+      lastVideoId = state.youtube_id;
+      player.loadVideoById({
+        videoId: state.youtube_id,
+        startSeconds: targetPosition
+      });
+      return;
+    }
+
+    if (typeof player.getCurrentTime !== 'function' || typeof player.seekTo !== 'function') return;
+
+    const currentPosition = player.getCurrentTime();
+    if (Number.isFinite(currentPosition) && Math.abs(currentPosition - targetPosition) > SEEK_TOLERANCE_SECONDS) {
+      player.seekTo(targetPosition, true);
+      if (!isVideoPlaying() && typeof player.playVideo === 'function') {
+        player.playVideo();
+      }
+    }
+  }
+
+  function createPlayer(state) {
+    const startSeconds = Math.max(0, state.position_sec ?? 0);
+    lastVideoId = state.youtube_id;
+
+    player = new YT.Player('yt', {
+      videoId: state.youtube_id,
+      playerVars: {
+        autoplay: 1,
+        controls: 0,
+        rel: 0,
+        enablejsapi: 1,
+        start: startSeconds,
+        end: Math.min(state.duration_sec ?? MAX_PLAY_SECONDS, MAX_PLAY_SECONDS)
+      },
+      events: {
+        onReady: (event) => {
+          event.target.seekTo(startSeconds, true);
+          event.target.playVideo();
+        },
+        onStateChange: (event) => {
+          if (event.data === YT.PlayerState.ENDED) {
+            finishTrack();
+          }
+        }
+      }
+    });
+  }
+
+  function applyState(state) {
+    current = state;
+    updateInfo(state);
+
+    if (state.status !== 'playing' || !state.youtube_id) {
+      if (player && typeof player.stopVideo === 'function') {
+        player.stopVideo();
+      }
+      lastVideoId = null;
+      return;
+    }
+
+    if (!hasUserStarted) return;
+
+    if (!player) {
+      createPlayer(state);
+      return;
+    }
+
+    syncPlayerPosition(state);
+  }
+
+  async function fetchPlaybackState() {
+    const res = await fetch('/api/playback-state');
+    const state = await res.json();
+
+    if (!res.ok) {
+      throw new Error(state.error || 'Failed to fetch playback state');
+    }
+
+    applyState(state);
+    return state;
+  }
+
+  async function advancePlayback() {
+    const res = await fetch('/api/playback-next', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        current_request_id: current?.request_id ?? null
+      })
+    });
+    const state = await res.json();
+
+    applyState(state);
+
+    if (!res.ok && res.status !== 404) {
+      throw new Error(state.error || 'Failed to advance playback');
+    }
+
+    return state;
+  }
+
+  function startLocalCountdown() {
     clearInterval(countdownTimer);
+    countdownTimer = setInterval(() => {
+      if (!current || current.status !== 'playing') return;
+
+      const startedAt = current.started_at ? new Date(`${current.started_at.replace(' ', 'T')}Z`) : null;
+      if (!startedAt) return;
+
+      const elapsed = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+      const remaining = Math.max(0, (current.duration_sec ?? MAX_PLAY_SECONDS) - elapsed);
+      updateCountdownText(remaining);
+
+      if (remaining <= 0 && hasUserStarted) {
+        finishTrack();
+      }
+    }, 1000);
+  }
+
+  function startSyncLoop() {
+    clearInterval(syncTimer);
+    syncTimer = setInterval(async () => {
+      try {
+        await fetchPlaybackState();
+      } catch (e) {
+        console.error(e);
+        nowEl.textContent = '同期エラー';
+      }
+    }, SYNC_INTERVAL_MS);
+  }
+
+  async function beginPlayback() {
+    hasUserStarted = true;
+    overlay.style.display = 'none';
+    startLocalCountdown();
+    startSyncLoop();
 
     try {
-
-      const res = await fetch('/api/random-song');
-      const data = await res.json();
-
-      if (!res.ok || !data.youtube_id) {
-        nowEl.textContent = data.error || '曲なし';
-        return;
+      const state = await fetchPlaybackState();
+      if (state.status !== 'playing') {
+        await advancePlayback();
       }
-
-      current = data;
-      isCountdownDurationSynced = false;
-
-      nowEl.textContent =
-        `再生中: ${data.title}`;
-
-      requesterEl.textContent = data.student_id || '--';
-
-      remain = data.max_duration_sec || MAX_PLAY_SECONDS;
-      updateCountdownText();
-
-      // YouTube Playerの初期化または動画の読み込み
-      if (!player) {
-        player = new YT.Player('yt', {
-          videoId: data.youtube_id,
-          playerVars: {
-            autoplay: 1,
-            controls: 0,
-            rel: 0,
-            enablejsapi: 1,
-            end: MAX_PLAY_SECONDS // 5分で強制終了
-          },
-          events: {
-            onReady: () => {
-              syncCountdownWithVideoDuration();
-            },
-            onStateChange: (event) => {
-              if (event.data === YT.PlayerState.PLAYING) {
-                syncCountdownWithVideoDuration();
-              }
-
-              // 動画が終了（ENDED）したら即座に次へ
-              if (event.data === YT.PlayerState.ENDED) {
-                finishTrack();
-              }
-            }
-          }
-        });
-      } else {
-        player.loadVideoById(data.youtube_id);
-      }
-
-      countdownTimer = setInterval(() => {
-
-        if (!isVideoPlaying()) {
-          return;
-        }
-
-        remain = Math.max(0, remain - 1);
-        updateCountdownText();
-
-        if (remain <= 0) {
-          finishTrack();
-        }
-
-      }, 1000);
-
     } catch (e) {
-
       console.error(e);
       nowEl.textContent = '通信エラー';
-
     }
   }
 
   async function finishTrack() {
 
-    if (!current || isAdvancing) return;
+    if (!current || isAdvancing || current.status !== 'playing') return;
 
     isAdvancing = true;
 
-    const played = current;
-    current = null;
-
-    clearInterval(countdownTimer);
-
-    // iframe停止
-    if (player && typeof player.stopVideo === 'function') {
-      player.stopVideo();
-    }
-
     try {
-
-      const res = await fetch('/api/song-played', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({
-          request_id: played.id
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to update played status');
-      }
-
+      await advancePlayback();
     } catch (e) {
-
-      console.error('再生済みステータスの更新に失敗しました:', e);
-      // 失敗しても次に進むが、サーバー側でエラーログを確認することを推奨
-
+      console.error('次の曲への同期に失敗しました:', e);
+    } finally {
+      isAdvancing = false;
     }
-
-    await pickAndPlay();
 
   }
 
   function openConfirmModal() {
 
-    if (!current) return;
+    if (!current || current.status !== 'playing') return;
     confirmModal.hidden = false;
     confirmModal.style.display = "grid";
 
@@ -193,12 +233,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   }
 
-  // ボタンが押されたらオーバーレイを消して再生開始
-  startBtn.addEventListener('click', () => {
-    overlay.style.display = 'none';
-    pickAndPlay();
-  }, { once: true });
+  fetchPlaybackState().catch(() => {
+    nowEl.textContent = '同期待機中';
+  });
+  startSyncLoop();
 
+  startBtn.addEventListener('click', beginPlayback, { once: true });
   nextBtn.addEventListener('click', openConfirmModal);
   cancelNextBtn.addEventListener('click', closeConfirmModal);
   confirmNextBtn.addEventListener('click', async () => {

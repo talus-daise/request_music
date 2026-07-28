@@ -8,7 +8,9 @@
     "deploy": "wrangler pages deploy public",
     "db:migrate": "wrangler d1 execute request_music --file=./migrations/0001_init.sql",
     "db:migrate:local": "wrangler d1 execute request_music --local --file=./migrations/0001_init.sql",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "db:migrate:playback": "wrangler d1 execute request_music --file=./migrations/0002_playback_state.sql",
+    "db:migrate:playback:local": "wrangler d1 execute request_music --local --file=./migrations/0002_playback_state.sql"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260501.0",
