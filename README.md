@@ -24,11 +24,13 @@ wrangler d1 create request_music
 3. マイグレーション
 ```bash
 npm run db:migrate
+npm run db:migrate:playback
 ```
 
 ### ローカル開発
 ```bash
 npm run db:migrate:local
+npm run db:migrate:playback:local
 npm run dev
 ```
 
@@ -40,9 +42,18 @@ npm run dev
 - `POST /api/request`: 投稿
 - `GET /api/requests?unplayedOnly=1`: 投稿一覧 + 統計
 - `GET /api/random-song`: 重み付きランダム選曲
+- `GET /api/playback-state`: 全デバイス共通の現在再生状態
+- `POST /api/playback-next`: 現在曲を再生済みにして次曲を全デバイスへ配信
+- `POST /api/playback-heartbeat`: 再生中デバイスの生存通知
+- `POST /api/playback-leave`: 再生をやめたデバイスの離脱通知
 - `POST /api/song-played`: 再生済み更新
 - `GET /api/history`: 再生履歴
 - `POST /api/admin-reset`: 管理用リセット (`x-admin-key` 必須)
+
+## 再生ページの同期設計
+
+再生ページはD1の `playback_state` を共有状態として使います。
+どれかのデバイスで再生開始または「次へ進む」が実行されると、サーバー側の現在曲・開始時刻・残り時間が更新され、他のデバイスは `GET /api/playback-state` の定期取得で同じ曲と再生位置に追従します。再生中の各デバイスはheartbeatを送り、全デバイスが離脱または一定時間heartbeat未送信になると共有再生状態は停止します。
 
 ## Weighted Random の設計
 

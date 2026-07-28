@@ -15,3 +15,16 @@ export interface RequestRecord {
   play_count: number;
   last_played_at: string | null;
 }
+
+export interface PlaybackStateRecord {
+  id: number;
+  request_id: number | null;
+  student_id: string | null;
+  title: string | null;
+  recommendation: string | null;
+  youtube_id: string | null;
+  started_at: string | null;
+  duration_sec: number;
+  status: "stopped" | "playing";
+  updated_at: string;
+}
