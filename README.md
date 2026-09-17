@@ -44,6 +44,7 @@ npm run dev
 - `GET /api/random-song`: 重み付きランダム選曲
 - `GET /api/playback-state`: 全デバイス共通の現在再生状態
 - `POST /api/playback-next`: 現在曲を再生済みにして次曲を全デバイスへ配信
+- `POST /api/playback-duration`: YouTubeから取得した曲の長さを共有状態へ反映（最大5分）
 - `POST /api/playback-heartbeat`: 再生中デバイスの生存通知
 - `POST /api/playback-leave`: 再生をやめたデバイスの離脱通知
 - `POST /api/song-played`: 再生済み更新

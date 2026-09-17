@@ -6,6 +6,9 @@ let isAdvancing = false;
 let hasUserStarted = false;
 let lastVideoId = null;
 let heartbeatTimer;
+let countdownAnchor = null;
+let reportedDurationForRequestId = null;
+let reportingDurationForRequestId = null;
 
 const MAX_PLAY_SECONDS = 300;
 const SYNC_INTERVAL_MS = 2000;
@@ -21,6 +24,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const startBtn = document.getElementById('start-btn');
   const overlay = document.getElementById('start-overlay');
   const nextBtn = document.getElementById('next-btn');
+  const nextDrawer = document.getElementById('next-drawer');
+  const nextDrawerToggle = document.getElementById('next-drawer-toggle');
   const confirmModal = document.getElementById('confirm-modal');
   const cancelNextBtn = document.getElementById('cancel-next-btn');
   const confirmNextBtn = document.getElementById('confirm-next-btn');
@@ -39,7 +44,31 @@ window.addEventListener('DOMContentLoaded', () => {
 
     nowEl.textContent = `再生中: ${state.title}`;
     requesterEl.textContent = state.student_id || '--';
-    updateCountdownText(state.remaining_sec ?? state.duration_sec ?? MAX_PLAY_SECONDS);
+    updateCountdownText(getRemainingSeconds());
+  }
+
+  function getRemainingSeconds() {
+    if (!countdownAnchor) return 0;
+    const elapsed = Math.floor((performance.now() - countdownAnchor.syncedAt) / 1000);
+    return Math.max(0, countdownAnchor.remainingSec - elapsed);
+  }
+
+  function syncCountdown(state) {
+    if (state.status !== 'playing' || !state.youtube_id) {
+      countdownAnchor = null;
+      return;
+    }
+
+    const remainingSec = Math.max(0, Number(state.remaining_sec ?? state.duration_sec ?? MAX_PLAY_SECONDS));
+    const isNewTrack = countdownAnchor?.requestId !== state.request_id;
+    const localRemaining = getRemainingSeconds();
+
+    countdownAnchor = {
+      requestId: state.request_id,
+      // A periodic sync must never make the displayed time go backwards.
+      remainingSec: isNewTrack ? remainingSec : Math.min(localRemaining, remainingSec),
+      syncedAt: performance.now()
+    };
   }
 
   function isVideoPlaying() {
@@ -172,8 +201,12 @@ window.addEventListener('DOMContentLoaded', () => {
         onReady: (event) => {
           event.target.seekTo(startSeconds, true);
           event.target.playVideo();
+          reportTrackDuration();
         },
         onStateChange: (event) => {
+          if (event.data === YT.PlayerState.PLAYING) {
+            reportTrackDuration();
+          }
           if (event.data === YT.PlayerState.ENDED) {
             finishTrack();
           }
@@ -184,6 +217,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function applyState(state) {
     current = state;
+    syncCountdown(state);
     updateInfo(state);
 
     if (state.status !== 'playing' || !state.youtube_id) {
@@ -191,6 +225,7 @@ window.addEventListener('DOMContentLoaded', () => {
         player.stopVideo();
       }
       lastVideoId = null;
+      reportedDurationForRequestId = null;
       return;
     }
 
@@ -202,6 +237,41 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     syncPlayerPosition(state);
+  }
+
+  async function reportTrackDuration() {
+    if (
+      !player ||
+      !current?.request_id ||
+      reportedDurationForRequestId === current.request_id ||
+      reportingDurationForRequestId === current.request_id
+    ) return;
+
+    const videoDuration = Number(player.getDuration?.());
+    if (!Number.isFinite(videoDuration) || videoDuration <= 0) return;
+
+    const durationSec = Math.min(MAX_PLAY_SECONDS, Math.max(1, Math.floor(videoDuration)));
+    const requestId = current.request_id;
+    reportingDurationForRequestId = requestId;
+
+    try {
+      const res = await fetch('/api/playback-duration', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ request_id: requestId, duration_sec: durationSec })
+      });
+      const state = await readJsonResponse(res);
+      if (!res.ok) throw new Error(state.error || 'Failed to update playback duration');
+      reportedDurationForRequestId = requestId;
+      applyState(state);
+    } catch (e) {
+      // The player can still finish naturally even if the duration sync fails.
+      console.error('曲の長さの同期に失敗しました:', e);
+    } finally {
+      if (reportingDurationForRequestId === requestId) {
+        reportingDurationForRequestId = null;
+      }
+    }
   }
 
   async function fetchPlaybackState() {
@@ -242,11 +312,7 @@ window.addEventListener('DOMContentLoaded', () => {
     countdownTimer = setInterval(() => {
       if (!current || current.status !== 'playing') return;
 
-      const startedAt = current.started_at ? new Date(`${current.started_at.replace(' ', 'T')}Z`) : null;
-      if (!startedAt) return;
-
-      const elapsed = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
-      const remaining = Math.max(0, (current.duration_sec ?? MAX_PLAY_SECONDS) - elapsed);
+      const remaining = getRemainingSeconds();
       updateCountdownText(remaining);
 
       if (remaining <= 0 && hasUserStarted) {
@@ -307,7 +373,20 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!current || current.status !== 'playing') return;
     confirmModal.hidden = false;
     confirmModal.style.display = "grid";
+    closeNextDrawer();
 
+  }
+
+  function toggleNextDrawer() {
+    const isOpen = nextDrawer.classList.toggle('is-open');
+    nextDrawerToggle.setAttribute('aria-expanded', String(isOpen));
+    document.getElementById('next-drawer-panel').setAttribute('aria-hidden', String(!isOpen));
+  }
+
+  function closeNextDrawer() {
+    nextDrawer.classList.remove('is-open');
+    nextDrawerToggle.setAttribute('aria-expanded', 'false');
+    document.getElementById('next-drawer-panel').setAttribute('aria-hidden', 'true');
   }
 
   function closeConfirmModal() {
@@ -327,6 +406,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   startBtn.addEventListener('click', beginPlayback, { once: true });
   nextBtn.addEventListener('click', openConfirmModal);
+  nextDrawerToggle.addEventListener('click', toggleNextDrawer);
   cancelNextBtn.addEventListener('click', closeConfirmModal);
   confirmNextBtn.addEventListener('click', async () => {
     closeConfirmModal();
