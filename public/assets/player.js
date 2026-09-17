@@ -61,14 +61,24 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const remainingSec = Math.max(0, Number(state.remaining_sec ?? state.duration_sec ?? MAX_PLAY_SECONDS));
     const isNewTrack = countdownAnchor?.requestId !== state.request_id;
-    const localRemaining = getRemainingSeconds();
+    if (isNewTrack) {
+      countdownAnchor = {
+        requestId: state.request_id,
+        remainingSec,
+        syncedAt: performance.now()
+      };
+      return;
+    }
 
-    countdownAnchor = {
-      requestId: state.request_id,
-      // A periodic sync must never make the displayed time go backwards.
-      remainingSec: isNewTrack ? remainingSec : Math.min(localRemaining, remainingSec),
-      syncedAt: performance.now()
-    };
+    // Keep the original timestamp while the server agrees with the local timer.
+    // Resetting it on every two-second sync causes alternating 1.5 / 0.5 second ticks.
+    if (remainingSec < getRemainingSeconds()) {
+      countdownAnchor = {
+        requestId: state.request_id,
+        remainingSec,
+        syncedAt: performance.now()
+      };
+    }
   }
 
   function isVideoPlaying() {
