@@ -13,7 +13,7 @@
     <section class="hero-card">
       <p class="eyebrow">Manage Requests</p>
       <h1>曲一覧と編集</h1>
-      <p class="hero-copy">投稿済みの曲を閲覧し、学籍番号・曲名・おすすめポイント・YouTubeリンクの修正や不要な曲の削除ができます。</p>
+      <p class="hero-copy">投稿済みの曲を閲覧し、学籍番号・曲名・おすすめポイント・YouTubeリンクの修正や不要な曲の削除ができます。再生対象外にした人の曲は自動選曲されません。</p>
       <div class="hero-actions">
         <a class="button-link secondary" href="/request/">投稿ページへ戻る</a>
         <label class="toggle-row">
@@ -22,6 +22,25 @@
         </label>
       </div>
       <div id="stats" class="stats-band"></div>
+    </section>
+
+    <section class="panel playback-settings-panel" aria-labelledby="playback-settings-title">
+      <div class="section-head">
+        <div>
+          <h2 id="playback-settings-title">再生対象の設定</h2>
+          <p class="section-note">指定した人の曲を、再生画面の自動選曲から外せます。</p>
+        </div>
+      </div>
+      <div class="playback-settings-controls">
+        <label>学籍番号
+          <select id="visibility_student_id"></select>
+        </label>
+        <label class="toggle-row exclusion-toggle">
+          <input type="checkbox" id="exclude_from_playback" />
+          <span>この人を再生対象外にする</span>
+        </label>
+      </div>
+      <p id="visibilityMessage" class="settings-message" aria-live="polite"></p>
     </section>
 
     <section class="manage-grid">

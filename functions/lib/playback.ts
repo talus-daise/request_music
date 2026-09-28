@@ -42,6 +42,12 @@ export async function selectRandomSong(env: Env): Promise<{ song: RequestRecord 
     `SELECT *
      FROM requests
      WHERE played = 0
+       AND NOT EXISTS (
+         SELECT 1
+         FROM student_settings ss
+         WHERE ss.student_id = requests.student_id
+           AND ss.excluded_from_playback = 1
+       )
        ${studentExclusionClause}
        AND (
          last_played_at IS NULL OR
