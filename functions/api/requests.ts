@@ -6,7 +6,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const unplayedOnly = url.searchParams.get("unplayedOnly") === "1";
   const where = unplayedOnly ? "WHERE played = 0" : "";
 
-  const [listResult, statsResult, studentStats] = await Promise.all([
+  const [listResult, statsResult, studentStats, excludedStudents] = await Promise.all([
     env.DB.prepare(
       `SELECT id, student_id, title, recommendation, youtube_id, created_at, played, played_today, play_count, last_played_at
        FROM requests ${where}
@@ -26,12 +26,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        FROM requests
        GROUP BY student_id
        ORDER BY posted_count DESC, student_id ASC`
-    ).all()
+    ).all(),
+    env.DB.prepare(
+      `SELECT student_id
+       FROM student_settings
+       WHERE excluded_from_playback = 1
+       ORDER BY student_id ASC`
+    ).all<{ student_id: string }>()
   ]);
 
   return jsonResponse({
     requests: listResult.results,
     stats: statsResult,
-    studentStats: studentStats.results
+    studentStats: studentStats.results,
+    excludedStudentIds: excludedStudents.results.map((student) => student.student_id)
   });
 };

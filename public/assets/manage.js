@@ -9,9 +9,13 @@ const listCountEl = document.getElementById('listCount');
 const editMetaEl = document.getElementById('editMeta');
 const saveBtn = document.getElementById('saveBtn');
 const deleteBtn = document.getElementById('deleteBtn');
+const visibilityStudentSelect = document.getElementById('visibility_student_id');
+const excludeFromPlayback = document.getElementById('exclude_from_playback');
+const visibilityMessageEl = document.getElementById('visibilityMessage');
 
 let requests = [];
 let selectedId = null;
+let excludedStudentIds = new Set();
 const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
   timeZone: 'Asia/Tokyo',
   year: 'numeric',
@@ -26,7 +30,11 @@ const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
 studentSelect.insertAdjacentHTML('beforeend', '<option value="" selected disabled>番号を選択してください</option>');
 for (const studentId of students) {
   studentSelect.insertAdjacentHTML('beforeend', `<option value="${studentId}">${studentId}</option>`);
+  visibilityStudentSelect.insertAdjacentHTML('beforeend', `<option value="${studentId}">${studentId}</option>`);
 }
+
+visibilityStudentSelect.addEventListener('change', syncExclusionToggle);
+excludeFromPlayback.addEventListener('change', updatePlaybackExclusion);
 
 unplayedOnly.addEventListener('change', () => {
   selectedId = null;
@@ -120,8 +128,10 @@ async function loadRequests() {
   const data = await response.json();
 
   requests = data.requests || [];
+  excludedStudentIds = new Set(data.excludedStudentIds || []);
   statsEl.textContent = `総投稿数: ${data.stats.total_requests ?? 0} / 本日再生済み: ${data.stats.today_played ?? 0} / 未再生: ${data.stats.unplayed_count ?? 0}`;
   listCountEl.textContent = `${requests.length}件を表示中`;
+  syncExclusionToggle();
 
   renderList();
 
@@ -133,6 +143,47 @@ async function loadRequests() {
     selectRequest(selectedId);
   } else {
     resetEditor('表示できる曲がありません。');
+  }
+}
+
+function syncExclusionToggle() {
+  excludeFromPlayback.checked = excludedStudentIds.has(visibilityStudentSelect.value);
+}
+
+async function updatePlaybackExclusion() {
+  const studentId = visibilityStudentSelect.value;
+  const excluded = excludeFromPlayback.checked;
+  excludeFromPlayback.disabled = true;
+  visibilityStudentSelect.disabled = true;
+  visibilityMessageEl.textContent = '設定を保存中...';
+
+  try {
+    const response = await fetch(`/api/student-settings/${encodeURIComponent(studentId)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ excluded_from_playback: excluded })
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      excludeFromPlayback.checked = !excluded;
+      visibilityMessageEl.textContent = data.error || '設定を保存できませんでした。';
+      return;
+    }
+
+    if (excluded) {
+      excludedStudentIds.add(studentId);
+    } else {
+      excludedStudentIds.delete(studentId);
+    }
+    visibilityMessageEl.textContent = data.message || '設定を保存しました。';
+  } catch (error) {
+    console.error(error);
+    excludeFromPlayback.checked = !excluded;
+    visibilityMessageEl.textContent = '設定の保存中に通信エラーが発生しました。';
+  } finally {
+    excludeFromPlayback.disabled = false;
+    visibilityStudentSelect.disabled = false;
   }
 }
 

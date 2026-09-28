@@ -25,12 +25,14 @@ wrangler d1 create request_music
 ```bash
 npm run db:migrate
 npm run db:migrate:playback
+npm run db:migrate:visibility
 ```
 
 ### ローカル開発
 ```bash
 npm run db:migrate:local
 npm run db:migrate:playback:local
+npm run db:migrate:visibility:local
 npm run dev
 ```
 
@@ -50,6 +52,7 @@ npm run dev
 - `POST /api/song-played`: 再生済み更新
 - `GET /api/history`: 再生履歴
 - `POST /api/admin-reset`: 管理用リセット (`x-admin-key` 必須)
+- `PUT /api/student-settings/:studentId`: 指定した人の曲を自動選曲の対象外／対象に設定
 
 ## 再生ページの同期設計
 
@@ -58,7 +61,7 @@ npm run dev
 
 ## Weighted Random の設計
 
-`GET /api/random-song` は未再生曲から候補を取り、次の重みを掛け合わせて抽選します。
+`GET /api/random-song` は未再生曲のうち、管理画面で再生対象外に設定されていない人から候補を取り、次の重みを掛け合わせて抽選します。
 
 - `base = 1 / 投稿者の総投稿数`
 - `todayFactor = 1 / (1 + 今日の再生回数 * 1.2)`
