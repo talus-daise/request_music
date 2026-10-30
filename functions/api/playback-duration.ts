@@ -4,7 +4,7 @@ import { jsonResponse } from "../lib/utils";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
-    const body = await request.json<Record<string, unknown>>().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const requestId = Number(body.request_id);
     const requestedDuration = Number(body.duration_sec);
 

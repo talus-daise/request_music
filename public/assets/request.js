@@ -8,6 +8,7 @@ for (let i = 1; i <= 40; i++) {
 const form = document.getElementById('requestForm');
 const msg = document.getElementById('message');
 const unplayedOnly = document.getElementById('unplayedOnly');
+const historyShowAll = document.getElementById('historyShowAll');
 const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
   timeZone: 'Asia/Tokyo',
   year: 'numeric',
@@ -42,6 +43,9 @@ form.addEventListener('submit', async (e) => {
 });
 
 unplayedOnly.addEventListener('change', loadRequests);
+if (historyShowAll) {
+  historyShowAll.addEventListener('change', loadHistory);
+}
 
 async function loadRequests() {
   const qp = unplayedOnly.checked ? '?unplayedOnly=1' : '';
@@ -53,7 +57,8 @@ async function loadRequests() {
 }
 
 async function loadHistory() {
-  const res = await fetch('/api/history');
+  const qp = historyShowAll?.checked ? '?all=1' : '';
+  const res = await fetch(`/api/history${qp}`);
   const data = await res.json();
   document.getElementById('history').innerHTML = (data.history || []).map((h) => `<div><time>${escapeHtml(formatJstDateTime(h.played_at))}</time><span>${escapeHtml(h.title)} (${escapeHtml(h.student_id)})</span></div>`).join('');
 }

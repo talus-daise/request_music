@@ -4,7 +4,7 @@ import { jsonResponse, sanitizeText } from "../lib/utils";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
-    const body = await request.json<Record<string, unknown>>().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const clientId = sanitizeText(body.client_id, 80);
 
     if (!clientId) {

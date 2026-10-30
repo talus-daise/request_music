@@ -1,7 +1,10 @@
 const students = Array.from({ length: 40 }, (_, index) => `3A${String(index + 1).padStart(2, '0')}`);
 const studentSelect = document.getElementById('edit_student_id');
 const unplayedOnly = document.getElementById('unplayedOnly');
+const showAllRequests = document.getElementById('showAllRequests');
+const searchInput = document.getElementById('searchInput');
 const editForm = document.getElementById('editForm');
+const editPlayed = document.getElementById('edit_played');
 const messageEl = document.getElementById('message');
 const listEl = document.getElementById('list');
 const statsEl = document.getElementById('stats');
@@ -11,6 +14,7 @@ const saveBtn = document.getElementById('saveBtn');
 const deleteBtn = document.getElementById('deleteBtn');
 
 let requests = [];
+let filteredRequests = [];
 let selectedId = null;
 const jstDateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
   timeZone: 'Asia/Tokyo',
@@ -34,6 +38,20 @@ unplayedOnly.addEventListener('change', () => {
   loadRequests();
 });
 
+if (showAllRequests) {
+  showAllRequests.addEventListener('change', () => {
+    selectedId = null;
+    resetEditor();
+    loadRequests();
+  });
+}
+
+if (searchInput) {
+  searchInput.addEventListener('input', () => {
+    applyFilter();
+  });
+}
+
 editForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
@@ -46,7 +64,8 @@ editForm.addEventListener('submit', async (event) => {
     student_id: document.getElementById('edit_student_id').value,
     title: document.getElementById('edit_title').value,
     recommendation: document.getElementById('edit_recommendation').value,
-    youtube_url: document.getElementById('edit_youtube_url').value
+    youtube_url: document.getElementById('edit_youtube_url').value,
+    played: editPlayed?.checked ? 1 : 0
   };
 
   messageEl.textContent = '保存中...';
@@ -115,18 +134,38 @@ deleteBtn.addEventListener('click', async () => {
 });
 
 async function loadRequests() {
-  const query = unplayedOnly.checked ? '?unplayedOnly=1' : '';
+  const params = new URLSearchParams();
+  if (unplayedOnly.checked) params.set('unplayedOnly', '1');
+  if (showAllRequests?.checked) params.set('all', '1');
+  const query = params.toString() ? `?${params.toString()}` : '';
+
   const response = await fetch(`/api/requests${query}`);
   const data = await response.json();
 
   requests = data.requests || [];
   statsEl.textContent = `総投稿数: ${data.stats.total_requests ?? 0} / 本日再生済み: ${data.stats.today_played ?? 0} / 未再生: ${data.stats.unplayed_count ?? 0}`;
-  listCountEl.textContent = `${requests.length}件を表示中`;
 
+  applyFilter();
+}
+
+function applyFilter() {
+  const query = (searchInput?.value || '').trim().toLowerCase();
+  if (!query) {
+    filteredRequests = [...requests];
+  } else {
+    filteredRequests = requests.filter((r) => {
+      const titleMatch = (r.title || '').toLowerCase().includes(query);
+      const studentMatch = (r.student_id || '').toLowerCase().includes(query);
+      const recoMatch = (r.recommendation || '').toLowerCase().includes(query);
+      return titleMatch || studentMatch || recoMatch;
+    });
+  }
+
+  listCountEl.textContent = `${filteredRequests.length}件を表示中 (全${requests.length}件)`;
   renderList();
 
-  if (!requests.some((request) => request.id === selectedId)) {
-    selectedId = requests[0]?.id ?? null;
+  if (!filteredRequests.some((request) => request.id === selectedId)) {
+    selectedId = filteredRequests[0]?.id ?? null;
   }
 
   if (selectedId) {
@@ -137,7 +176,7 @@ async function loadRequests() {
 }
 
 function renderList() {
-  listEl.innerHTML = requests.map((request) => {
+  listEl.innerHTML = filteredRequests.map((request) => {
     const status = Number(request.played) === 1 ? 'played' : 'waiting';
     const recommendation = request.recommendation ? `<p>${escapeHtml(request.recommendation)}</p>` : '';
     const selectedClass = request.id === selectedId ? ' selected' : '';
@@ -184,6 +223,9 @@ function selectRequest(requestId) {
   document.getElementById('edit_title').value = request.title;
   document.getElementById('edit_recommendation').value = request.recommendation || '';
   document.getElementById('edit_youtube_url').value = `https://youtu.be/${request.youtube_id}`;
+  if (editPlayed) {
+    editPlayed.checked = Number(request.played) === 1;
+  }
   editMetaEl.textContent = `ID ${request.id} / ${Number(request.played) === 1 ? '再生済み' : '未再生'} / 最終再生: ${formatJstDateTime(request.last_played_at)}`;
   saveBtn.disabled = false;
   deleteBtn.disabled = false;
@@ -192,6 +234,9 @@ function selectRequest(requestId) {
 function resetEditor(metaText = '曲を選択すると詳細を表示します。') {
   editForm.reset();
   document.getElementById('edit_id').value = '';
+  if (editPlayed) {
+    editPlayed.checked = false;
+  }
   editMetaEl.textContent = metaText;
   saveBtn.disabled = true;
   deleteBtn.disabled = true;
