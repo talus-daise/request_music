@@ -29,6 +29,23 @@ window.addEventListener('DOMContentLoaded', () => {
   const confirmModal = document.getElementById('confirm-modal');
   const cancelNextBtn = document.getElementById('cancel-next-btn');
   const confirmNextBtn = document.getElementById('confirm-next-btn');
+  const disableCaptionsBtn = document.getElementById('disable-captions-btn');
+
+  function disableCaptions() {
+    if (!player) return;
+    try {
+      if (typeof player.unloadModule === 'function') {
+        player.unloadModule('captions');
+        player.unloadModule('cc');
+      }
+      if (typeof player.setOption === 'function') {
+        player.setOption('captions', 'track', {});
+        player.setOption('cc', 'track', {});
+      }
+    } catch (e) {
+      console.warn('字幕の非表示処理実行時の警告:', e);
+    }
+  }
 
   function updateCountdownText(remaining) {
     countdownEl.textContent = `次曲まで: ${Math.max(0, remaining)}秒`;
@@ -204,17 +221,21 @@ window.addEventListener('DOMContentLoaded', () => {
         controls: 0,
         rel: 0,
         enablejsapi: 1,
+        cc_load_policy: 0,
+        hl: 'ja',
         start: startSeconds,
         end: Math.min(state.duration_sec ?? MAX_PLAY_SECONDS, MAX_PLAY_SECONDS)
       },
       events: {
         onReady: (event) => {
+          disableCaptions();
           event.target.seekTo(startSeconds, true);
           event.target.playVideo();
           reportTrackDuration();
         },
         onStateChange: (event) => {
           if (event.data === YT.PlayerState.PLAYING) {
+            disableCaptions();
             reportTrackDuration();
           }
           if (event.data === YT.PlayerState.ENDED) {
@@ -416,6 +437,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   startBtn.addEventListener('click', beginPlayback, { once: true });
   nextBtn.addEventListener('click', openConfirmModal);
+  if (disableCaptionsBtn) {
+    disableCaptionsBtn.addEventListener('click', () => {
+      disableCaptions();
+    });
+  }
   nextDrawerToggle.addEventListener('click', toggleNextDrawer);
   cancelNextBtn.addEventListener('click', closeConfirmModal);
   confirmNextBtn.addEventListener('click', async () => {

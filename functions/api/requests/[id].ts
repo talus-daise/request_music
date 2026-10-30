@@ -14,6 +14,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     const title = sanitizeText(body.title, 120);
     const recommendation = sanitizeText(body.recommendation, 400);
     const youtubeUrl = sanitizeText(body.youtube_url, 500);
+    const playedVal = body.played !== undefined ? (Number(body.played) === 1 ? 1 : 0) : undefined;
 
     if (!isValidStudentId(studentId)) {
       return jsonResponse({ error: "学籍番号が不正です。" }, 400);
@@ -28,8 +29,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     }
 
     const existing = await env.DB.prepare(
-      `SELECT id FROM requests WHERE id = ?1 LIMIT 1`
-    ).bind(requestId).first();
+      `SELECT id, played FROM requests WHERE id = ?1 LIMIT 1`
+    ).bind(requestId).first<{ id: number; played: number }>();
 
     if (!existing) {
       return jsonResponse({ error: "対象の曲が見つかりません。" }, 404);
@@ -47,18 +48,22 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
       return jsonResponse({ error: "同じ動画は既に投稿済みです。" }, 409);
     }
 
+    const newPlayed = playedVal !== undefined ? playedVal : existing.played;
+
     await env.DB.prepare(
       `UPDATE requests
        SET student_id = ?1,
            title = ?2,
            recommendation = ?3,
-           youtube_id = ?4
-       WHERE id = ?5`
+           youtube_id = ?4,
+           played = ?5
+       WHERE id = ?6`
     ).bind(
       studentId,
       title,
       recommendation || null,
       youtubeId,
+      newPlayed,
       requestId
     ).run();
 
