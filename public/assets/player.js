@@ -223,6 +223,7 @@ window.addEventListener('DOMContentLoaded', () => {
         enablejsapi: 1,
         cc_load_policy: 0,
         hl: 'ja',
+        origin: window.location.origin,
         start: startSeconds,
         end: Math.min(state.duration_sec ?? MAX_PLAY_SECONDS, MAX_PLAY_SECONDS)
       },
