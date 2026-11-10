@@ -17,8 +17,12 @@
       <div class="hero-actions">
         <a class="button-link secondary" href="/request/">投稿ページへ戻る</a>
         <label class="toggle-row">
-          <input type="checkbox" id="unplayedOnly" checked />
+          <input type="checkbox" id="unplayedOnly" />
           <span>未再生のみ表示</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="showAllRequests" checked />
+          <span>全件取得</span>
         </label>
       </div>
       <div id="stats" class="stats-band"></div>
@@ -29,6 +33,9 @@
         <div class="section-head">
           <h2>投稿一覧</h2>
           <p id="listCount" class="section-note"></p>
+        </div>
+        <div class="search-box" style="margin-bottom: 16px;">
+          <input type="search" id="searchInput" placeholder="曲名、学籍番号、おすすめで検索..." />
         </div>
         <div id="list" class="request-list manage-list"></div>
       </div>
@@ -52,6 +59,10 @@
           </label>
           <label>YouTubeリンク
             <input id="edit_youtube_url" type="url" required />
+          </label>
+          <label class="toggle-row" style="margin: 4px 0;">
+            <input type="checkbox" id="edit_played" />
+            <span>再生済み状態にする</span>
           </label>
           <div class="editor-meta" id="editMeta">曲を選択すると詳細を表示します。</div>
           <div class="editor-actions">

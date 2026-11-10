@@ -49,7 +49,7 @@ async function markPlayed(env: Env, requestId: number | null): Promise<void> {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const state = await getPlaybackState(env);
-    const body = await request.json<Record<string, unknown>>().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const currentRequestId = Number(body.current_request_id);
 
     if (
