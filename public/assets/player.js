@@ -325,26 +325,37 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (typeof player.getCurrentTime !== 'function' || typeof player.seekTo !== 'function') return;
-
-    const currentPosition = player.getCurrentTime();
-    if (Number.isFinite(currentPosition) && Math.abs(currentPosition - targetPosition) > SEEK_TOLERANCE_SECONDS) {
-      noteProgrammaticAction();
-      player.seekTo(targetPosition, true);
+    if (typeof player.seekTo === 'function' && typeof player.getCurrentTime === 'function') {
+      const currentPosition = player.getCurrentTime();
+      if (Number.isFinite(currentPosition) && Math.abs(currentPosition - targetPosition) > SEEK_TOLERANCE_SECONDS) {
+        noteProgrammaticAction();
+        player.seekTo(targetPosition, true);
+      }
     }
 
-    // Follow a resume shared from another device (or recover a stall): the
-    // shared state is playing, so a locally paused player should be playing.
-    // A manual pause never reaches this branch, because it is reported to
-    // the server first and turns the shared state (or the pending-pause
-    // guard above) to paused.
-    if (
-      typeof player.getPlayerState === 'function' &&
-      player.getPlayerState() === YT.PlayerState.PAUSED &&
-      typeof player.playVideo === 'function'
-    ) {
-      noteProgrammaticAction();
-      player.playVideo();
+    // The shared state is playing, so this player should be playing too.
+    // Drive it there from ANY stopped state, not just PAUSED: when autoplay
+    // does not engage, the player can sit in CUED (showing its big play
+    // button) or UNSTARTED while the server-side timer keeps running, and
+    // only a playVideo() call gets it going. This also follows a resume
+    // shared from another device. A manual pause never reaches this branch:
+    // it turns the shared state (or the pending-pause guard above) to
+    // paused first. BUFFERING is left alone (playback is on its way) and
+    // ENDED is left to the track-advance flow.
+    if (typeof player.getPlayerState === 'function' && typeof player.playVideo === 'function') {
+      const playerState = player.getPlayerState();
+      if (
+        playerState !== YT.PlayerState.PLAYING &&
+        playerState !== YT.PlayerState.BUFFERING &&
+        playerState !== YT.PlayerState.ENDED
+      ) {
+        noteProgrammaticAction();
+        try {
+          player.playVideo();
+        } catch (e) {
+          console.warn('再生開始の呼び出しに失敗しました:', e);
+        }
+      }
     }
   }
 
