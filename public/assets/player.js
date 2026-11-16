@@ -23,12 +23,23 @@ let frozenRemainingMs = null;
 let pauseRequestId = null;
 let resumeRequestId = null;
 let hasPlayedCurrentVideo = false;
+// A PAUSED event is not proof that the user paused the video: the player
+// also fires PAUSED (asynchronously) for our own loadVideoById / seekTo /
+// playVideo calls, e.g. right when a track starts. Reporting those as a
+// manual pause paused the shared state and broke autoplay. So a pause is
+// first only suspected (the local countdown freezes immediately), and is
+// reported to the server only if the player is still paused after a short
+// confirmation window and we did not touch the player in the meantime.
+let pendingPause = null;
+let pendingPauseTimer = null;
+let lastProgrammaticActionAt = 0;
 
 const MAX_PLAY_SECONDS = 300;
 const SYNC_INTERVAL_MS = 2000;
 const TICK_INTERVAL_MS = 250;
 const SEEK_TOLERANCE_SECONDS = 2;
 const HEARTBEAT_INTERVAL_MS = 5000;
+const PAUSE_CONFIRM_MS = 1200;
 const CLIENT_ID_STORAGE_KEY = "requestMusicPlaybackClientId";
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -68,10 +79,36 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function isPausedState(state) {
     if (!isActiveState(state)) return false;
-    // A pause this device reported counts as paused immediately, even before
-    // the server state comes back, so neither the countdown nor the position
-    // sync can run ahead of (or undo) the user's pause in the meantime.
-    return state.status === 'paused' || pauseRequestId === state.request_id;
+    // A pause this device reported (or is about to report, see pendingPause)
+    // counts as paused immediately, even before the server state comes back,
+    // so neither the countdown nor the position sync can run ahead of (or
+    // undo) the user's pause in the meantime.
+    return state.status === 'paused'
+      || pauseRequestId === state.request_id
+      || pendingPause?.requestId === state.request_id;
+  }
+
+  function noteProgrammaticAction() {
+    lastProgrammaticActionAt = Date.now();
+    dropPendingPause();
+  }
+
+  function dropPendingPause() {
+    if (pendingPauseTimer !== null) {
+      clearTimeout(pendingPauseTimer);
+      pendingPauseTimer = null;
+    }
+    pendingPause = null;
+  }
+
+  // A suspected pause turned out to be spurious (the video is playing
+  // again): resume the local countdown from the frozen value until the next
+  // sync re-derives the exact deadline.
+  function releaseFrozenCountdown() {
+    if (deadlineMs === null && frozenRemainingMs !== null && current?.status === 'playing') {
+      deadlineMs = Date.now() + frozenRemainingMs;
+    }
+    frozenRemainingMs = null;
   }
 
   function updateCountdownText(remaining) {
@@ -122,7 +159,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // This device paused the track and the pause is not confirmed yet: keep
     // the frozen value instead of adopting a stale "playing" deadline.
-    if (pauseRequestId === state.request_id) return;
+    if (pauseRequestId === state.request_id || pendingPause?.requestId === state.request_id) return;
 
     const serverNowMs = Date.parse(state.server_now ?? '');
     const endsAtMs = state.ends_at
@@ -242,9 +279,16 @@ window.addEventListener('DOMContentLoaded', () => {
       // stale paused state that is still in flight.
       if (state.status === 'paused' && resumeRequestId === state.request_id) return;
 
+      // The pause is only suspected/reported by this device so far, not
+      // confirmed by the server: touch nothing. Seeking here would stamp a
+      // programmatic action inside the confirmation window and could cancel
+      // a genuine manual pause before it is reported.
+      if (state.status !== 'paused') return;
+
       if (lastVideoId !== state.youtube_id) {
         lastVideoId = state.youtube_id;
         hasPlayedCurrentVideo = false;
+        noteProgrammaticAction();
         if (typeof player.cueVideoById === 'function') {
           player.cueVideoById({ videoId: state.youtube_id, startSeconds: targetPosition });
         } else {
@@ -256,9 +300,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
       const currentPosition = getPlayerPositionSec();
       if (currentPosition !== null && Math.abs(currentPosition - targetPosition) > SEEK_TOLERANCE_SECONDS) {
+        noteProgrammaticAction();
         player.seekTo(targetPosition, true);
       }
       if (isVideoPlaying() && typeof player.pauseVideo === 'function') {
+        noteProgrammaticAction();
         player.pauseVideo();
       }
       return;
@@ -271,6 +317,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (lastVideoId !== state.youtube_id) {
       lastVideoId = state.youtube_id;
       hasPlayedCurrentVideo = false;
+      noteProgrammaticAction();
       player.loadVideoById({
         videoId: state.youtube_id,
         startSeconds: targetPosition
@@ -282,6 +329,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const currentPosition = player.getCurrentTime();
     if (Number.isFinite(currentPosition) && Math.abs(currentPosition - targetPosition) > SEEK_TOLERANCE_SECONDS) {
+      noteProgrammaticAction();
       player.seekTo(targetPosition, true);
     }
 
@@ -295,6 +343,7 @@ window.addEventListener('DOMContentLoaded', () => {
       player.getPlayerState() === YT.PlayerState.PAUSED &&
       typeof player.playVideo === 'function'
     ) {
+      noteProgrammaticAction();
       player.playVideo();
     }
   }
@@ -303,6 +352,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const startSeconds = Math.max(0, Number(state.position_sec ?? 0));
     lastVideoId = state.youtube_id;
     hasPlayedCurrentVideo = false;
+    noteProgrammaticAction();
 
     player = new YT.Player('yt', {
       videoId: state.youtube_id,
@@ -320,8 +370,11 @@ window.addEventListener('DOMContentLoaded', () => {
       events: {
         onReady: (event) => {
           disableCaptions();
+          noteProgrammaticAction();
           event.target.seekTo(startSeconds, true);
-          if (current && isPausedState(current)) {
+          // Only a server-confirmed pause may hold the first playback; a
+          // locally suspected pause must never block autoplay.
+          if (current?.status === 'paused') {
             event.target.pauseVideo();
           } else {
             event.target.playVideo();
@@ -331,19 +384,23 @@ window.addEventListener('DOMContentLoaded', () => {
         onStateChange: (event) => {
           if (event.data === YT.PlayerState.PLAYING) {
             hasPlayedCurrentVideo = true;
+            // Playing again means any suspected pause was spurious.
+            dropPendingPause();
+            releaseFrozenCountdown();
             disableCaptions();
             reportTrackDuration();
             handlePlayerResumed();
           }
           if (event.data === YT.PlayerState.PAUSED) {
-            handlePlayerPaused(false);
+            notePlayerPaused(false);
           }
           if (event.data === YT.PlayerState.UNSTARTED && hasPlayedCurrentVideo) {
             // stopVideo() lands here: the video was stopped by hand, which
             // must freeze the countdown just like a pause.
-            handlePlayerPaused(true);
+            notePlayerPaused(true);
           }
           if (event.data === YT.PlayerState.ENDED) {
+            dropPendingPause();
             finishTrack();
           }
         }
@@ -360,12 +417,16 @@ window.addEventListener('DOMContentLoaded', () => {
     if (resumeRequestId !== null && (state.status === 'playing' || state.request_id !== resumeRequestId)) {
       resumeRequestId = null;
     }
+    if (pendingPause !== null && (state.status !== 'playing' || state.request_id !== pendingPause.requestId)) {
+      dropPendingPause();
+    }
 
     syncCountdown(state, receivedAtMs);
     updateInfo(state);
 
     if (!isActiveState(state)) {
       if (player && typeof player.stopVideo === 'function') {
+        noteProgrammaticAction();
         player.stopVideo();
       }
       lastVideoId = null;
@@ -397,27 +458,61 @@ window.addEventListener('DOMContentLoaded', () => {
     return state;
   }
 
-  // The user stopped the video on this device (pause button / click / stop).
-  // Freeze the local countdown immediately, then share the pause so the
-  // countdown and the video stop on every device.
-  function handlePlayerPaused(wasStopped) {
+  // The video stopped on this device (pause button / click / stop). Freeze
+  // the local countdown immediately, but only suspect a manual pause for
+  // now: the player also fires PAUSED for our own programmatic operations
+  // while a track is starting, and reporting those broke autoplay.
+  function notePlayerPaused(wasStopped) {
     if (!hasUserStarted || isAdvancing) return;
     if (!isActiveState(current) || current.status !== 'playing') return;
+    // A video that has not played yet on this device cannot have been
+    // paused by the user; its PAUSED events belong to loading / autoplay
+    // negotiation and must never pause the shared state.
+    if (!hasPlayedCurrentVideo) return;
     if (pauseRequestId === current.request_id) return;
+    if (pendingPause?.requestId === current.request_id) return;
 
-    const positionSec = wasStopped ? null : getPlayerPositionSec();
+    frozenRemainingMs = getRemainingMs();
+    deadlineMs = null;
+    pendingPause = { requestId: current.request_id, wasStopped, at: Date.now() };
+    updateCountdownText(getRemainingSeconds());
+    nowEl.textContent = `一時停止中: ${current.title}`;
+
+    if (pendingPauseTimer !== null) clearTimeout(pendingPauseTimer);
+    pendingPauseTimer = setTimeout(promotePendingPause, PAUSE_CONFIRM_MS);
+  }
+
+  // After the confirmation window, a pause that is still in effect and was
+  // not caused by our own player operations is a manual pause: share it so
+  // the countdown and the video stop on every device.
+  function promotePendingPause() {
+    pendingPauseTimer = null;
+    const pending = pendingPause;
+    pendingPause = null;
+    if (!pending) return;
+
+    const abort = () => releaseFrozenCountdown();
+    if (!isActiveState(current) || current.request_id !== pending.requestId || current.status !== 'playing') return;
+    if (isAdvancing || pauseRequestId === pending.requestId) return;
+    // We loaded / sought / started the player after this event: the pause
+    // came from that operation, not from the user.
+    if (lastProgrammaticActionAt > pending.at) return abort();
+
+    const playerState = typeof player?.getPlayerState === 'function' ? player.getPlayerState() : null;
+    const stillStopped = pending.wasStopped
+      ? (playerState === YT.PlayerState.UNSTARTED || playerState === YT.PlayerState.CUED || playerState === YT.PlayerState.PAUSED)
+      : (playerState === YT.PlayerState.PAUSED);
+    if (!stillStopped) return abort();
+
+    const positionSec = pending.wasStopped ? null : getPlayerPositionSec();
 
     // A pause in the last moment of the track is just the end of the video;
     // the ENDED event / countdown will advance the track.
     const durationSec = Math.min(Number(player?.getDuration?.() || 0) || current.duration_sec || MAX_PLAY_SECONDS, MAX_PLAY_SECONDS);
-    if (!wasStopped && positionSec !== null && positionSec >= durationSec - 0.75) return;
+    if (!pending.wasStopped && positionSec !== null && positionSec >= durationSec - 0.75) return abort();
 
-    frozenRemainingMs = getRemainingMs();
-    deadlineMs = null;
-    const requestId = current.request_id;
+    const requestId = pending.requestId;
     pauseRequestId = requestId;
-    updateCountdownText(getRemainingSeconds());
-    nowEl.textContent = `一時停止中: ${current.title}`;
 
     sendPlaybackControl('/api/playback-pause', {
       request_id: requestId,
@@ -578,6 +673,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!current || isAdvancing || !isActiveState(current)) return;
 
     isAdvancing = true;
+    dropPendingPause();
     pauseRequestId = null;
     resumeRequestId = null;
 
