@@ -1,5 +1,5 @@
 import type { Env } from "../lib/types";
-import { removePlaybackClient, stopPlaybackIfNoActiveClients } from "../lib/playback";
+import { removePlaybackClient } from "../lib/playback";
 import { jsonResponse, sanitizeText } from "../lib/utils";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -12,7 +12,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     await removePlaybackClient(env, clientId);
-    await stopPlaybackIfNoActiveClients(env);
+    // No immediate stop here: if this was the last device actually
+    // playing, the nobody-playing reset clears the track after its
+    // grace period, which also covers a device that comes right back.
     return jsonResponse({ ok: true });
   } catch (error) {
     console.error("Failed to remove playback client", error);

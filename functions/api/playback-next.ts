@@ -60,13 +60,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return jsonResponse(serializePlaybackState(state));
     }
 
-    if (state.status === "playing" && state.request_id !== null) {
+    // Only a track that was actually playing (or deliberately paused)
+    // counts as finished when playback advances. A stopped state never
+    // carries a track worth marking: the nobody-playing reset clears it
+    // without marking it, because nobody heard it to the end.
+    let finishedRequestId: number | null = null;
+
+    if ((state.status === "playing" || state.status === "paused") && state.request_id !== null) {
       const lockResult = await env.DB.prepare(
         `UPDATE playback_state
          SET status = 'stopped',
+             paused_at = NULL,
+             paused_position_sec = NULL,
+             no_player_since = NULL,
              updated_at = datetime('now')
          WHERE id = 1
-           AND status = 'playing'
+           AND status IN ('playing', 'paused')
            AND request_id = ?1`
       ).bind(state.request_id).run();
 
@@ -74,9 +83,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const latest = await getPlaybackState(env);
         return jsonResponse(serializePlaybackState(latest));
       }
+
+      finishedRequestId = state.request_id;
     }
 
-    await markPlayed(env, state.request_id);
+    await markPlayed(env, finishedRequestId);
 
     const { song, error } = await selectRandomSong(env);
 
@@ -91,6 +102,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
              started_at = NULL,
              duration_sec = ?1,
              status = 'stopped',
+             paused_at = NULL,
+             paused_position_sec = NULL,
+             no_player_since = NULL,
              updated_at = datetime('now')
          WHERE id = 1`
       ).bind(MAX_PLAY_SECONDS).run();
@@ -109,6 +123,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
            started_at = datetime('now'),
            duration_sec = ?6,
            status = 'playing',
+           paused_at = NULL,
+           paused_position_sec = NULL,
+           no_player_since = NULL,
            updated_at = datetime('now')
        WHERE id = 1`
     ).bind(song.id, song.student_id, song.title, song.recommendation, song.youtube_id, MAX_PLAY_SECONDS).run();

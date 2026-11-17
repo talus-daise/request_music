@@ -25,6 +25,9 @@ export interface PlaybackStateRecord {
   youtube_id: string | null;
   started_at: string | null;
   duration_sec: number;
-  status: "stopped" | "playing";
+  status: "stopped" | "playing" | "paused";
+  paused_at: string | null;
+  paused_position_sec: number | null;
+  no_player_since: string | null;
   updated_at: string;
 }

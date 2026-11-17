@@ -3,6 +3,11 @@ import { weightedPick } from "./utils";
 
 const MAX_PLAY_SECONDS = 300;
 const ACTIVE_CLIENT_TTL_SECONDS = 15;
+// How long the shared state may have no device actually playing before the
+// server resets the track. Long enough to cover buffering and track
+// changes, short enough that a track nobody hears does not run to the end
+// (and get marked as played) on the timer alone.
+const NO_PLAYING_GRACE_SECONDS = 10;
 const ACTIVE_CLIENT_STALE_MODIFIER = `-${ACTIVE_CLIENT_TTL_SECONDS} seconds`;
 
 function calcWeight(song: RequestRecord, totals: Map<string, number>, todayMap: Map<string, number>, recentMap: Map<string, number>): number {
@@ -99,6 +104,18 @@ export async function selectRandomSong(env: Env): Promise<{ song: RequestRecord 
   return { song: selected };
 }
 
+export function parsePlaybackTimestamp(value: string | null): number | null {
+  if (!value) return null;
+  const ms = new Date(`${value.replace(" ", "T")}Z`).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export function formatPlaybackTimestamp(ms: number): string {
+  // Store with millisecond precision ("YYYY-MM-DD HH:MM:SS.mmm", UTC) so a
+  // pause/resume cycle does not lose up to a second every time it happens.
+  return new Date(ms).toISOString().replace("T", " ").replace("Z", "");
+}
+
 export async function ensurePlaybackState(env: Env): Promise<void> {
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS playback_state (
@@ -111,17 +128,38 @@ export async function ensurePlaybackState(env: Env): Promise<void> {
        started_at TEXT,
        duration_sec INTEGER NOT NULL DEFAULT 300,
        status TEXT NOT NULL DEFAULT 'stopped',
+       paused_at TEXT,
+       paused_position_sec REAL,
+       no_player_since TEXT,
        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
        FOREIGN KEY (request_id) REFERENCES requests(id)
      )`
   ).run();
 
+  // Tables created before pause support lack the newer columns. Adding them
+  // here keeps existing databases working even before migrations 0003/0004
+  // run.
+  for (const column of ["paused_at TEXT", "paused_position_sec REAL", "no_player_since TEXT"]) {
+    try {
+      await env.DB.prepare(`ALTER TABLE playback_state ADD COLUMN ${column}`).run();
+    } catch {
+      // Column already exists.
+    }
+  }
+
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS playback_clients (
        client_id TEXT PRIMARY KEY,
-       last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+       last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+       is_playing INTEGER NOT NULL DEFAULT 0
      )`
   ).run();
+
+  try {
+    await env.DB.prepare(`ALTER TABLE playback_clients ADD COLUMN is_playing INTEGER NOT NULL DEFAULT 0`).run();
+  } catch {
+    // Column already exists.
+  }
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO playback_state (id, status, duration_sec)
@@ -137,13 +175,13 @@ export async function pruneInactivePlaybackClients(env: Env): Promise<void> {
   ).bind(ACTIVE_CLIENT_STALE_MODIFIER).run();
 }
 
-export async function recordPlaybackClientHeartbeat(env: Env, clientId: string): Promise<void> {
+export async function recordPlaybackClientHeartbeat(env: Env, clientId: string, isPlaying = false): Promise<void> {
   await ensurePlaybackState(env);
   await env.DB.prepare(
-    `INSERT INTO playback_clients (client_id, last_seen_at)
-     VALUES (?1, datetime('now'))
-     ON CONFLICT(client_id) DO UPDATE SET last_seen_at = datetime('now')`
-  ).bind(clientId).run();
+    `INSERT INTO playback_clients (client_id, last_seen_at, is_playing)
+     VALUES (?1, datetime('now'), ?2)
+     ON CONFLICT(client_id) DO UPDATE SET last_seen_at = datetime('now'), is_playing = ?2`
+  ).bind(clientId, isPlaying ? 1 : 0).run();
 }
 
 export async function removePlaybackClient(env: Env, clientId: string): Promise<void> {
@@ -164,23 +202,91 @@ export async function getActivePlaybackClientCount(env: Env): Promise<number> {
   return Number(result?.count ?? 0);
 }
 
-export async function stopPlaybackIfNoActiveClients(env: Env): Promise<void> {
-  const activeClientCount = await getActivePlaybackClientCount(env);
-  if (activeClientCount > 0) return;
+export async function getPlayingPlaybackClientCount(env: Env): Promise<number> {
+  await pruneInactivePlaybackClients(env);
+  const result = await env.DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM playback_clients
+     WHERE is_playing = 1`
+  ).first<{ count: number }>();
+
+  return Number(result?.count ?? 0);
+}
+
+// Devices can be connected (heartbeating) while none of them is actually
+// playing the video, e.g. autoplay never engaged on any of them, and the
+// same is true once every device has left. If nobody is actually playing
+// beyond the grace period, reset the shared state: the track is cleared
+// and the next start picks a fresh track. The track is NOT marked as
+// played, even if it was partway through, because nobody heard it.
+// A deliberate manual pause is not a reset: it keeps the track held.
+export async function resetPlaybackIfNobodyPlaying(env: Env): Promise<void> {
+  const state = await getPlaybackState(env);
+
+  if (state.status !== 'playing') {
+    if (state.no_player_since) {
+      await env.DB.prepare(
+        `UPDATE playback_state
+         SET no_player_since = NULL
+         WHERE id = 1
+           AND no_player_since IS NOT NULL`
+      ).run();
+    }
+    return;
+  }
+
+  const playingClientCount = await getPlayingPlaybackClientCount(env);
+  const now = new Date();
+
+  if (playingClientCount > 0) {
+    if (state.no_player_since) {
+      await env.DB.prepare(
+        `UPDATE playback_state
+         SET no_player_since = NULL
+         WHERE id = 1
+           AND status = 'playing'
+           AND no_player_since IS NOT NULL`
+      ).run();
+    }
+    return;
+  }
+
+  const sinceMs = parsePlaybackTimestamp(state.no_player_since);
+  if (sinceMs === null) {
+    await env.DB.prepare(
+      `UPDATE playback_state
+       SET no_player_since = ?1
+       WHERE id = 1
+         AND status = 'playing'`
+    ).bind(formatPlaybackTimestamp(now.getTime())).run();
+    return;
+  }
+
+  if (now.getTime() - sinceMs < NO_PLAYING_GRACE_SECONDS * 1000) return;
 
   await env.DB.prepare(
     `UPDATE playback_state
-     SET status = 'stopped',
+     SET request_id = NULL,
+         student_id = NULL,
+         title = NULL,
+         recommendation = NULL,
+         youtube_id = NULL,
+         started_at = NULL,
+         duration_sec = ?1,
+         status = 'stopped',
+         paused_at = NULL,
+         paused_position_sec = NULL,
+         no_player_since = NULL,
          updated_at = datetime('now')
      WHERE id = 1
        AND status = 'playing'`
-  ).run();
+  ).bind(MAX_PLAY_SECONDS).run();
 }
 
 export async function getPlaybackState(env: Env): Promise<PlaybackStateRecord> {
   await ensurePlaybackState(env);
   const state = await env.DB.prepare(
-    `SELECT id, request_id, student_id, title, recommendation, youtube_id, started_at, duration_sec, status, updated_at
+    `SELECT id, request_id, student_id, title, recommendation, youtube_id, started_at, duration_sec, status, paused_at, paused_position_sec, no_player_since, updated_at
      FROM playback_state
      WHERE id = 1`
   ).first<PlaybackStateRecord>();
@@ -192,13 +298,44 @@ export async function getPlaybackState(env: Env): Promise<PlaybackStateRecord> {
   return state;
 }
 
+function clampPositionSec(positionSec: number, durationSec: number): number {
+  if (!Number.isFinite(positionSec)) return 0;
+  return Math.min(Math.max(0, positionSec), durationSec);
+}
+
+function roundSec(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+export function getPlaybackPositionSec(state: PlaybackStateRecord, serverNow = new Date()): number {
+  const startedAtMs = parsePlaybackTimestamp(state.started_at);
+  if (state.status === "paused") {
+    if (state.paused_position_sec !== null && state.paused_position_sec !== undefined) {
+      return clampPositionSec(Number(state.paused_position_sec), state.duration_sec);
+    }
+    const pausedAtMs = parsePlaybackTimestamp(state.paused_at);
+    if (startedAtMs !== null && pausedAtMs !== null) {
+      return clampPositionSec((pausedAtMs - startedAtMs) / 1000, state.duration_sec);
+    }
+    return 0;
+  }
+  if (state.status !== "playing" || startedAtMs === null) return 0;
+  return clampPositionSec((serverNow.getTime() - startedAtMs) / 1000, state.duration_sec);
+}
+
 export function serializePlaybackState(state: PlaybackStateRecord, serverNow = new Date()) {
-  const startedAt = state.started_at ? new Date(`${state.started_at.replace(" ", "T")}Z`) : null;
-  const elapsed = state.status === "playing" && startedAt
-    ? Math.max(0, Math.floor((serverNow.getTime() - startedAt.getTime()) / 1000))
-    : 0;
-  const positionSec = Math.min(elapsed, state.duration_sec);
+  const startedAtMs = parsePlaybackTimestamp(state.started_at);
+  // Keep sub-second precision: flooring the elapsed time here used to hand
+  // every client a remaining time that was up to a second stale, and the
+  // clients re-anchored to it on every sync, so the error accumulated.
+  const positionSec = getPlaybackPositionSec(state, serverNow);
   const remainingSec = Math.max(0, state.duration_sec - positionSec);
+  // The single source of truth for the countdown is this absolute deadline.
+  // Clients derive their local deadline from ends_at and server_now on every
+  // sync instead of decrementing a local counter, so syncs cannot drift.
+  const endsAt = state.status === "playing" && startedAtMs !== null
+    ? new Date(startedAtMs + state.duration_sec * 1000).toISOString()
+    : null;
 
   return {
     status: state.status,
@@ -210,10 +347,75 @@ export function serializePlaybackState(state: PlaybackStateRecord, serverNow = n
     started_at: state.started_at,
     duration_sec: state.duration_sec,
     server_now: serverNow.toISOString(),
-    position_sec: positionSec,
-    remaining_sec: remainingSec,
+    ends_at: endsAt,
+    position_sec: roundSec(positionSec),
+    remaining_sec: roundSec(remainingSec),
+    paused_at: state.paused_at,
     updated_at: state.updated_at
   };
 }
 
-export { ACTIVE_CLIENT_TTL_SECONDS, MAX_PLAY_SECONDS };
+export async function pausePlayback(
+  env: Env,
+  requestId: number,
+  reportedPositionSec: number
+): Promise<PlaybackStateRecord> {
+  const state = await getPlaybackState(env);
+  if (state.status !== "playing" || state.request_id !== requestId) {
+    return state;
+  }
+
+  const now = new Date();
+  const positionSec = Number.isFinite(reportedPositionSec)
+    ? clampPositionSec(reportedPositionSec, state.duration_sec)
+    : getPlaybackPositionSec(state, now);
+
+  await env.DB.prepare(
+    `UPDATE playback_state
+     SET status = 'paused',
+         paused_at = ?1,
+         paused_position_sec = ?2,
+         updated_at = datetime('now')
+     WHERE id = 1
+       AND status = 'playing'
+       AND request_id = ?3`
+  ).bind(formatPlaybackTimestamp(now.getTime()), positionSec, requestId).run();
+
+  return getPlaybackState(env);
+}
+
+export async function resumePlayback(
+  env: Env,
+  requestId: number,
+  reportedPositionSec: number
+): Promise<PlaybackStateRecord> {
+  const state = await getPlaybackState(env);
+  if (state.status !== "paused" || state.request_id !== requestId) {
+    return state;
+  }
+
+  const now = new Date();
+  const positionSec = Number.isFinite(reportedPositionSec)
+    ? clampPositionSec(reportedPositionSec, state.duration_sec)
+    : getPlaybackPositionSec(state, now);
+  // Re-anchor started_at so that "now - started_at" equals the frozen
+  // position. The wall-clock deadline then continues from exactly where the
+  // pause froze it, on every device at once.
+  const startedAt = formatPlaybackTimestamp(now.getTime() - positionSec * 1000);
+
+  await env.DB.prepare(
+    `UPDATE playback_state
+     SET status = 'playing',
+         started_at = ?1,
+         paused_at = NULL,
+         paused_position_sec = NULL,
+         updated_at = datetime('now')
+     WHERE id = 1
+       AND status = 'paused'
+       AND request_id = ?2`
+  ).bind(startedAt, requestId).run();
+
+  return getPlaybackState(env);
+}
+
+export { ACTIVE_CLIENT_TTL_SECONDS, MAX_PLAY_SECONDS, NO_PLAYING_GRACE_SECONDS };

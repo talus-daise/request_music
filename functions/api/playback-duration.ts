@@ -13,7 +13,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const state = await getPlaybackState(env);
-    if (state.status !== "playing" || state.request_id !== requestId) {
+    if (state.status === "stopped" || state.request_id !== requestId) {
       return jsonResponse(serializePlaybackState(state));
     }
 
@@ -23,7 +23,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
        SET duration_sec = ?1,
            updated_at = datetime('now')
        WHERE id = 1
-         AND status = 'playing'
+         AND status IN ('playing', 'paused')
          AND request_id = ?2`
     ).bind(durationSec, requestId).run();
 
