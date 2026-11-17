@@ -213,8 +213,18 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const clientId = getClientId();
 
-  async function sendPlaybackClientEvent(path, keepalive = false) {
-    const payload = JSON.stringify({ client_id: clientId });
+  // Whether this device is actually playing the video (or actively trying
+  // to, while buffering). The server stops the shared playback when no
+  // device reports this for a while, so a track nobody hears is not
+  // consumed by the timer alone.
+  function isActivelyPlaying() {
+    if (!player || typeof player.getPlayerState !== 'function') return false;
+    const playerState = player.getPlayerState();
+    return playerState === YT.PlayerState.PLAYING || playerState === YT.PlayerState.BUFFERING;
+  }
+
+  async function sendPlaybackClientEvent(path, keepalive = false, extra = {}) {
+    const payload = JSON.stringify({ client_id: clientId, ...extra });
     const res = await fetch(path, {
       method: 'POST',
       headers: {
@@ -231,7 +241,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   async function sendHeartbeat() {
-    await sendPlaybackClientEvent('/api/playback-heartbeat');
+    await sendPlaybackClientEvent('/api/playback-heartbeat', false, { playing: isActivelyPlaying() });
   }
 
   function startHeartbeat() {
@@ -393,6 +403,12 @@ window.addEventListener('DOMContentLoaded', () => {
           reportTrackDuration();
         },
         onStateChange: (event) => {
+          // Report the new playing state right away, not just on the next
+          // periodic heartbeat, so the server's "nobody is playing" check
+          // works with fresh information.
+          if (hasUserStarted) {
+            sendHeartbeat().catch((e) => console.error('再生状態のheartbeatに失敗しました:', e));
+          }
           if (event.data === YT.PlayerState.PLAYING) {
             hasPlayedCurrentVideo = true;
             // Playing again means any suspected pause was spurious.

@@ -26,6 +26,7 @@ wrangler d1 create request_music
 npm run db:migrate
 npm run db:migrate:playback
 npm run db:migrate:pause
+npm run db:migrate:playing
 ```
 
 ### ローカル開発
@@ -48,7 +49,7 @@ npm run dev
 - `POST /api/playback-duration`: YouTubeから取得した曲の長さを共有状態へ反映（最大5分）
 - `POST /api/playback-pause`: 動画が手動で止められたことを共有状態へ反映し、全デバイスのカウントダウンを凍結
 - `POST /api/playback-resume`: 一時停止の再開を共有状態へ反映し、止まっていた分だけ開始時刻をずらす
-- `POST /api/playback-heartbeat`: 再生中デバイスの生存通知
+- `POST /api/playback-heartbeat`: 再生中デバイスの生存通知（実際に動画を再生中かどうかも含む）
 - `POST /api/playback-leave`: 再生をやめたデバイスの離脱通知
 - `POST /api/song-played`: 再生済み更新
 - `GET /api/history`: 再生履歴
@@ -62,6 +63,8 @@ npm run dev
 カウントダウンの基準はサーバーが返す絶対的な終了時刻（`ends_at`）とサーバー時刻（`server_now`）です。各デバイスは同期のたびに「サーバーの終了時刻 − サーバー時刻」を自分の時計へ写して期限を求め直すため、同期を繰り返しても誤差が積み重ならず、タイマーが少しずつズレていくことはありません（以前は小数以下を切り捨てた残り秒を同期のたびに数え直していたため、誤差が一方向に蓄積していました）。
 
 どれかのデバイスで動画が手動で一時停止・停止されると、その位置で共有状態が `paused` になり、全デバイスで動画とカウントダウンが止まります。再開すると止まっていた時間の分だけ `started_at` が後ろへずれるので、全デバイスが同じ位置・同じ残り時間から一緒に再開します。一時停止にはマイグレーション `0003_playback_pause.sql`（`npm run db:migrate:pause`）を使いますが、未適用でもAPI側が不足カラムを自動で追加します。
+
+「再生済み」になるのは、曲が最後まで流れ終わったとき（と、再生中に明示的にスキップしたとき）だけです。各デバイスはheartbeatで「実際に動画を再生中か」も送ります（マイグレーション `0004_playback_playing_clients.sql`、`npm run db:migrate:playing`、未適用でも自動でカラム追加）。接続中の全デバイスで再生されていない状態が10秒続くと、サーバー側で共有状態をその位置で凍結（`paused`）します。また全デバイスが離脱して共有状態が `stopped` になった場合は、止まった曲と位置を保持しておき、次に再生を開始したときはその曲の続きから再開します。どちらの場合も、誰も最後まで聴いていない曲がタイマーだけで「再生済み」になることはありません。
 
 ## Weighted Random の設計
 

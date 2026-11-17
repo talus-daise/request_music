@@ -3,6 +3,11 @@ import { weightedPick } from "./utils";
 
 const MAX_PLAY_SECONDS = 300;
 const ACTIVE_CLIENT_TTL_SECONDS = 15;
+// How long the shared state may have no device actually playing before the
+// server freezes the track. Long enough to cover buffering and track
+// changes, short enough that a track nobody hears does not run to the end
+// (and get marked as played) on the timer alone.
+const NO_PLAYING_GRACE_SECONDS = 10;
 const ACTIVE_CLIENT_STALE_MODIFIER = `-${ACTIVE_CLIENT_TTL_SECONDS} seconds`;
 
 function calcWeight(song: RequestRecord, totals: Map<string, number>, todayMap: Map<string, number>, recentMap: Map<string, number>): number {
@@ -125,14 +130,16 @@ export async function ensurePlaybackState(env: Env): Promise<void> {
        status TEXT NOT NULL DEFAULT 'stopped',
        paused_at TEXT,
        paused_position_sec REAL,
+       no_player_since TEXT,
        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
        FOREIGN KEY (request_id) REFERENCES requests(id)
      )`
   ).run();
 
-  // Tables created before pause support lack the pause columns. Adding them
-  // here keeps existing databases working even before migration 0003 runs.
-  for (const column of ["paused_at TEXT", "paused_position_sec REAL"]) {
+  // Tables created before pause support lack the newer columns. Adding them
+  // here keeps existing databases working even before migrations 0003/0004
+  // run.
+  for (const column of ["paused_at TEXT", "paused_position_sec REAL", "no_player_since TEXT"]) {
     try {
       await env.DB.prepare(`ALTER TABLE playback_state ADD COLUMN ${column}`).run();
     } catch {
@@ -143,9 +150,16 @@ export async function ensurePlaybackState(env: Env): Promise<void> {
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS playback_clients (
        client_id TEXT PRIMARY KEY,
-       last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+       last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+       is_playing INTEGER NOT NULL DEFAULT 0
      )`
   ).run();
+
+  try {
+    await env.DB.prepare(`ALTER TABLE playback_clients ADD COLUMN is_playing INTEGER NOT NULL DEFAULT 0`).run();
+  } catch {
+    // Column already exists.
+  }
 
   await env.DB.prepare(
     `INSERT OR IGNORE INTO playback_state (id, status, duration_sec)
@@ -161,13 +175,13 @@ export async function pruneInactivePlaybackClients(env: Env): Promise<void> {
   ).bind(ACTIVE_CLIENT_STALE_MODIFIER).run();
 }
 
-export async function recordPlaybackClientHeartbeat(env: Env, clientId: string): Promise<void> {
+export async function recordPlaybackClientHeartbeat(env: Env, clientId: string, isPlaying = false): Promise<void> {
   await ensurePlaybackState(env);
   await env.DB.prepare(
-    `INSERT INTO playback_clients (client_id, last_seen_at)
-     VALUES (?1, datetime('now'))
-     ON CONFLICT(client_id) DO UPDATE SET last_seen_at = datetime('now')`
-  ).bind(clientId).run();
+    `INSERT INTO playback_clients (client_id, last_seen_at, is_playing)
+     VALUES (?1, datetime('now'), ?2)
+     ON CONFLICT(client_id) DO UPDATE SET last_seen_at = datetime('now'), is_playing = ?2`
+  ).bind(clientId, isPlaying ? 1 : 0).run();
 }
 
 export async function removePlaybackClient(env: Env, clientId: string): Promise<void> {
@@ -188,25 +202,109 @@ export async function getActivePlaybackClientCount(env: Env): Promise<number> {
   return Number(result?.count ?? 0);
 }
 
+export async function getPlayingPlaybackClientCount(env: Env): Promise<number> {
+  await pruneInactivePlaybackClients(env);
+  const result = await env.DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM playback_clients
+     WHERE is_playing = 1`
+  ).first<{ count: number }>();
+
+  return Number(result?.count ?? 0);
+}
+
 export async function stopPlaybackIfNoActiveClients(env: Env): Promise<void> {
   const activeClientCount = await getActivePlaybackClientCount(env);
   if (activeClientCount > 0) return;
 
+  const state = await getPlaybackState(env);
+  if (state.status !== 'playing' && state.status !== 'paused') return;
+
+  // Keep the track and the position it stopped at. When a device comes
+  // back, playback-next resumes this track from that position instead of
+  // consuming it as "played" even though nobody heard it to the end.
+  const positionSec = getPlaybackPositionSec(state, new Date());
   await env.DB.prepare(
     `UPDATE playback_state
      SET status = 'stopped',
          paused_at = NULL,
-         paused_position_sec = NULL,
+         paused_position_sec = ?1,
+         no_player_since = NULL,
          updated_at = datetime('now')
      WHERE id = 1
        AND status IN ('playing', 'paused')`
-  ).run();
+  ).bind(positionSec).run();
+}
+
+// Devices can be connected (heartbeating) while none of them is actually
+// playing the video, e.g. autoplay never engaged on any of them. If that
+// lasts beyond the grace period, freeze the shared state like a pause:
+// the server-side timer stops, and the track is not marked as played,
+// because nobody is hearing it.
+export async function freezePlaybackIfNobodyPlaying(env: Env): Promise<void> {
+  const state = await getPlaybackState(env);
+
+  if (state.status !== 'playing') {
+    if (state.no_player_since) {
+      await env.DB.prepare(
+        `UPDATE playback_state
+         SET no_player_since = NULL
+         WHERE id = 1
+           AND no_player_since IS NOT NULL`
+      ).run();
+    }
+    return;
+  }
+
+  const activeClientCount = await getActivePlaybackClientCount(env);
+  if (activeClientCount === 0) return; // stopPlaybackIfNoActiveClients owns that case
+
+  const playingClientCount = await getPlayingPlaybackClientCount(env);
+  const now = new Date();
+
+  if (playingClientCount > 0) {
+    if (state.no_player_since) {
+      await env.DB.prepare(
+        `UPDATE playback_state
+         SET no_player_since = NULL
+         WHERE id = 1
+           AND status = 'playing'
+           AND no_player_since IS NOT NULL`
+      ).run();
+    }
+    return;
+  }
+
+  const sinceMs = parsePlaybackTimestamp(state.no_player_since);
+  if (sinceMs === null) {
+    await env.DB.prepare(
+      `UPDATE playback_state
+       SET no_player_since = ?1
+       WHERE id = 1
+         AND status = 'playing'`
+    ).bind(formatPlaybackTimestamp(now.getTime())).run();
+    return;
+  }
+
+  if (now.getTime() - sinceMs < NO_PLAYING_GRACE_SECONDS * 1000) return;
+
+  const positionSec = getPlaybackPositionSec(state, now);
+  await env.DB.prepare(
+    `UPDATE playback_state
+     SET status = 'paused',
+         paused_at = ?1,
+         paused_position_sec = ?2,
+         no_player_since = NULL,
+         updated_at = datetime('now')
+     WHERE id = 1
+       AND status = 'playing'`
+  ).bind(formatPlaybackTimestamp(now.getTime()), positionSec).run();
 }
 
 export async function getPlaybackState(env: Env): Promise<PlaybackStateRecord> {
   await ensurePlaybackState(env);
   const state = await env.DB.prepare(
-    `SELECT id, request_id, student_id, title, recommendation, youtube_id, started_at, duration_sec, status, paused_at, paused_position_sec, updated_at
+    `SELECT id, request_id, student_id, title, recommendation, youtube_id, started_at, duration_sec, status, paused_at, paused_position_sec, no_player_since, updated_at
      FROM playback_state
      WHERE id = 1`
   ).first<PlaybackStateRecord>();
@@ -338,4 +436,4 @@ export async function resumePlayback(
   return getPlaybackState(env);
 }
 
-export { ACTIVE_CLIENT_TTL_SECONDS, MAX_PLAY_SECONDS };
+export { ACTIVE_CLIENT_TTL_SECONDS, MAX_PLAY_SECONDS, NO_PLAYING_GRACE_SECONDS };

@@ -1,5 +1,5 @@
 import type { Env } from "../lib/types";
-import { getPlaybackState, MAX_PLAY_SECONDS, selectRandomSong, serializePlaybackState } from "../lib/playback";
+import { formatPlaybackTimestamp, getPlaybackState, MAX_PLAY_SECONDS, selectRandomSong, serializePlaybackState } from "../lib/playback";
 import { jsonResponse } from "../lib/utils";
 
 async function markPlayed(env: Env, requestId: number | null): Promise<void> {
@@ -60,12 +60,40 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return jsonResponse(serializePlaybackState(state));
     }
 
+    if (state.status === "stopped" && state.request_id !== null) {
+      // The previous session stopped with this track unfinished (every
+      // device left, or nobody was actually playing). Resume the same
+      // track from the position it stopped at. It must NOT be marked as
+      // played: only a track that plays through to the end (or is
+      // explicitly skipped while playing) counts as played.
+      const positionSec = Math.min(
+        Math.max(0, Number(state.paused_position_sec ?? 0) || 0),
+        state.duration_sec
+      );
+      const startedAt = formatPlaybackTimestamp(Date.now() - positionSec * 1000);
+      await env.DB.prepare(
+        `UPDATE playback_state
+         SET status = 'playing',
+             started_at = ?1,
+             paused_at = NULL,
+             paused_position_sec = NULL,
+             no_player_since = NULL,
+             updated_at = datetime('now')
+         WHERE id = 1
+           AND status = 'stopped'
+           AND request_id = ?2`
+      ).bind(startedAt, state.request_id).run();
+
+      return jsonResponse(serializePlaybackState(await getPlaybackState(env)));
+    }
+
     if ((state.status === "playing" || state.status === "paused") && state.request_id !== null) {
       const lockResult = await env.DB.prepare(
         `UPDATE playback_state
          SET status = 'stopped',
              paused_at = NULL,
              paused_position_sec = NULL,
+             no_player_since = NULL,
              updated_at = datetime('now')
          WHERE id = 1
            AND status IN ('playing', 'paused')
@@ -95,6 +123,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
              status = 'stopped',
              paused_at = NULL,
              paused_position_sec = NULL,
+             no_player_since = NULL,
              updated_at = datetime('now')
          WHERE id = 1`
       ).bind(MAX_PLAY_SECONDS).run();
@@ -115,6 +144,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
            status = 'playing',
            paused_at = NULL,
            paused_position_sec = NULL,
+           no_player_since = NULL,
            updated_at = datetime('now')
        WHERE id = 1`
     ).bind(song.id, song.student_id, song.title, song.recommendation, song.youtube_id, MAX_PLAY_SECONDS).run();
