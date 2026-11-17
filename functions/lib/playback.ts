@@ -4,7 +4,7 @@ import { weightedPick } from "./utils";
 const MAX_PLAY_SECONDS = 300;
 const ACTIVE_CLIENT_TTL_SECONDS = 15;
 // How long the shared state may have no device actually playing before the
-// server freezes the track. Long enough to cover buffering and track
+// server resets the track. Long enough to cover buffering and track
 // changes, short enough that a track nobody hears does not run to the end
 // (and get marked as played) on the timer alone.
 const NO_PLAYING_GRACE_SECONDS = 10;
@@ -213,35 +213,14 @@ export async function getPlayingPlaybackClientCount(env: Env): Promise<number> {
   return Number(result?.count ?? 0);
 }
 
-export async function stopPlaybackIfNoActiveClients(env: Env): Promise<void> {
-  const activeClientCount = await getActivePlaybackClientCount(env);
-  if (activeClientCount > 0) return;
-
-  const state = await getPlaybackState(env);
-  if (state.status !== 'playing' && state.status !== 'paused') return;
-
-  // Keep the track and the position it stopped at. When a device comes
-  // back, playback-next resumes this track from that position instead of
-  // consuming it as "played" even though nobody heard it to the end.
-  const positionSec = getPlaybackPositionSec(state, new Date());
-  await env.DB.prepare(
-    `UPDATE playback_state
-     SET status = 'stopped',
-         paused_at = NULL,
-         paused_position_sec = ?1,
-         no_player_since = NULL,
-         updated_at = datetime('now')
-     WHERE id = 1
-       AND status IN ('playing', 'paused')`
-  ).bind(positionSec).run();
-}
-
 // Devices can be connected (heartbeating) while none of them is actually
-// playing the video, e.g. autoplay never engaged on any of them. If that
-// lasts beyond the grace period, freeze the shared state like a pause:
-// the server-side timer stops, and the track is not marked as played,
-// because nobody is hearing it.
-export async function freezePlaybackIfNobodyPlaying(env: Env): Promise<void> {
+// playing the video, e.g. autoplay never engaged on any of them, and the
+// same is true once every device has left. If nobody is actually playing
+// beyond the grace period, reset the shared state: the track is cleared
+// and the next start picks a fresh track. The track is NOT marked as
+// played, even if it was partway through, because nobody heard it.
+// A deliberate manual pause is not a reset: it keeps the track held.
+export async function resetPlaybackIfNobodyPlaying(env: Env): Promise<void> {
   const state = await getPlaybackState(env);
 
   if (state.status !== 'playing') {
@@ -255,9 +234,6 @@ export async function freezePlaybackIfNobodyPlaying(env: Env): Promise<void> {
     }
     return;
   }
-
-  const activeClientCount = await getActivePlaybackClientCount(env);
-  if (activeClientCount === 0) return; // stopPlaybackIfNoActiveClients owns that case
 
   const playingClientCount = await getPlayingPlaybackClientCount(env);
   const now = new Date();
@@ -288,17 +264,23 @@ export async function freezePlaybackIfNobodyPlaying(env: Env): Promise<void> {
 
   if (now.getTime() - sinceMs < NO_PLAYING_GRACE_SECONDS * 1000) return;
 
-  const positionSec = getPlaybackPositionSec(state, now);
   await env.DB.prepare(
     `UPDATE playback_state
-     SET status = 'paused',
-         paused_at = ?1,
-         paused_position_sec = ?2,
+     SET request_id = NULL,
+         student_id = NULL,
+         title = NULL,
+         recommendation = NULL,
+         youtube_id = NULL,
+         started_at = NULL,
+         duration_sec = ?1,
+         status = 'stopped',
+         paused_at = NULL,
+         paused_position_sec = NULL,
          no_player_since = NULL,
          updated_at = datetime('now')
      WHERE id = 1
        AND status = 'playing'`
-  ).bind(formatPlaybackTimestamp(now.getTime()), positionSec).run();
+  ).bind(MAX_PLAY_SECONDS).run();
 }
 
 export async function getPlaybackState(env: Env): Promise<PlaybackStateRecord> {
